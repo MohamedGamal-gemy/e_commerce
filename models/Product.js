@@ -1,0 +1,126 @@
+const Joi = require("joi");
+const mongoose = require("mongoose");
+
+const ProductSchema = new mongoose.Schema(
+  {
+    title: {
+      type: String,
+      required: [true, "Title is required"],
+      trim: true,
+      minlength: [2, "Title must be at least 2 characters"],
+    },
+    description: {
+      type: String,
+      required: [true, "Description is required"],
+      trim: true,
+    },
+    price: {
+      type: Number,
+      required: [true, "Price is required"],
+      min: [0.01, "Price must be greater than 0"],
+    },
+    category: {
+      type: String,
+      required: true,
+      enum: ["men", "kids", "women"],
+    },
+    subcategory: {
+      type: String,
+      trim: true,
+      enum: ["Shirts", "T-shirts", "Jacket"],
+      required: true,
+    },
+    variants: [
+      {
+        color: {
+          name: {
+            type: String,
+            required: [true, "Color name is required"],
+          },
+          value: {
+            type: String,
+            required: [true, "Color value is required"],
+          },
+        },
+        images: [
+          {
+            url: {
+              type: String,
+              required: [true, "Image URL is required"],
+            },
+            publicId: {
+              type: String,
+            },
+          },
+        ],
+        sizes: [
+          {
+            size: {
+              type: String,
+              required: [true, "Size is required"],
+            },
+            quantity: {
+              type: Number,
+              required: [true, "Quantity is required"],
+              min: [0, "Quantity can't be negative"],
+            },
+          },
+        ],
+      },
+    ],
+  },
+  {
+    timestamps: true,
+  }
+);
+
+const Product = mongoose.model("Product", ProductSchema);
+
+function validateProduct(obj) {
+  const schema = Joi.object({
+    title: Joi.string().trim().min(2).required(),
+    description: Joi.string().trim().required(),
+    price: Joi.number().min(0.01).required(),
+    category: Joi.string().valid("men", "kids", "women").required(),
+    subcategory: Joi.string().valid("Shirts", "T-shirts", "Jacket").required(),
+    variants: Joi.array()
+      .items(
+        Joi.object({
+          color: Joi.object({
+            name: Joi.string().required(),
+            value: Joi.string().required(),
+          }).required(),
+          images: Joi.array()
+            .items(
+              Joi.object({
+                url: Joi.string()
+                  .uri()
+                  .required()
+                  .pattern(
+                    new RegExp("^https://res.cloudinary.com/"),
+                    "URL must be a valid Cloudinary URL"
+                  ),
+                publicId: Joi.string().optional(),
+              })
+            )
+            .min(1)
+            .required(),
+          sizes: Joi.array()
+            .items(
+              Joi.object({
+                size: Joi.string().required(),
+                quantity: Joi.number().min(0).required(),
+              })
+            )
+            .min(1)
+            .required(),
+        })
+      )
+      .min(1)
+      .required(),
+  });
+
+  return schema.validate(obj, { abortEarly: false });
+}
+
+module.exports = { Product, validateProduct };
