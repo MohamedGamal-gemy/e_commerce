@@ -7,7 +7,6 @@
 //
 // const router = express.Router();
 //
-// // إعداد التخزين
 // const storage = multer.diskStorage({
 //   destination: (req, file, cb) => {
 //     const uploadPath = path.join(__dirname, "../uploads");
@@ -22,7 +21,6 @@
 //   },
 // });
 //
-// // استخدام multer بدون اسم حقل ثابت (any)
 // const upload = multer({ storage });
 //
 // router.post(
@@ -51,7 +49,6 @@
 //       return res.status(400).json({ message: "Invalid JSON in variants" });
 //     }
 //
-//     // ربط الصور مع كل variant حسب الاسم
 //     variants.forEach((variant, index) => {
 //       const fieldName = `variant${index}Images`;
 //       const filesForVariant = req.files.filter(
@@ -81,20 +78,6 @@
 //   })
 // );
 //
-// router.get(
-//   "/",
-//   asyncHandler(async (req, res) => {
-//     const products = await Product.find().sort({ createdAt: -1 }); // ترتيب حسب الأحدث
-//
-//     if (!products || products.length === 0) {
-//       return res.status(404).json({ message: "No products found" });
-//     }
-//
-//     res.status(200).json(products);
-//   })
-// );
-//
-// module.exports = router;
 
 // ######################################
 const express = require("express");
