@@ -99,7 +99,11 @@
 // ######################################
 const express = require("express");
 const asyncHandler = require("express-async-handler");
-const { Product, validateProduct } = require("../models/Product");
+const {
+  Product,
+  validateProduct,
+  validateProductUpdate,
+} = require("../models/Product");
 
 const router = express.Router();
 
@@ -127,7 +131,7 @@ router.post(
 
     res.status(201).json({
       message: "Product created successfully",
-      product,
+      // product,
     });
   })
 );
@@ -135,9 +139,15 @@ router.post(
 router.get(
   "/",
   asyncHandler(async (req, res) => {
-    const products = await Product.find().sort({ createdAt: -1 });
+    const { category, subcategory } = req.query;
 
-    if (!products || products.length === 0) {
+    const filter = {};
+    if (category) filter.category = category;
+    if (subcategory) filter.subcategory = subcategory;
+
+    const products = await Product.find(filter).sort({ createdAt: -1 });
+
+    if (!products) {
       return res.status(404).json({ message: "No products found" });
     }
 
@@ -145,5 +155,67 @@ router.get(
   })
 );
 
-module.exports = router;
+router.patch(
+  "/:id",
+  asyncHandler(async (req, res) => {
+    const { id } = req.params;
+    const updateData = req.body;
+    const { error } = validateProductUpdate(updateData);
+    if (error) {
+      return res.status(400).json({ message: error.details[0].message });
+    }
+    const updatedProduct = await Product.findByIdAndUpdate(id, updateData, {
+      new: true,
+      runValidators: true,
+    });
 
+    if (!updatedProduct) {
+      return res.status(404).json({ message: "Product not found" });
+    }
+
+    res.status(200).json(updatedProduct);
+  })
+);
+
+//
+
+router.patch(
+  "/:id/variant/:variantId/color",
+  asyncHandler(async (req, res) => {
+    const { id, variantId } = req.params;
+    const { name, value } = req.body;
+
+    const product = await Product.findById(id);
+    if (!product) {
+      return res.status(404).json({ message: "Product not found" });
+    }
+
+    const variant = product.variants.id(variantId);
+    if (!variant) {
+      return res.status(404).json({ message: "Variant not found" });
+    }
+
+    if (name) variant.color.name = name;
+    if (value) variant.color.value = value;
+
+    await product.save();
+
+    res.status(200).json({ message: "Color updated", product });
+  })
+);
+
+router.delete(
+  "/:id",
+  asyncHandler(async (req, res) => {
+    const { id } = req.params;
+    const deletedProduct = await Product.findByIdAndDelete(id);
+
+    if (!deletedProduct) {
+      return res.status(404).json({ message: "Product not found" });
+    }
+
+    res.json({ message: "Product has been deleted successfully" });
+  })
+);
+
+module.exports = router;

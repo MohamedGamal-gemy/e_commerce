@@ -120,7 +120,51 @@ function validateProduct(obj) {
       .required(),
   });
 
-  return schema.validate(obj, { abortEarly: false });
+  return schema.validate(obj, { abortEarly: true });
 }
 
-module.exports = { Product, validateProduct };
+function validateProductUpdate(obj) {
+  const schema = Joi.object({
+    title: Joi.string().trim().min(2).optional(),
+    description: Joi.string().trim().optional(),
+    price: Joi.number().min(0.01).optional(),
+    category: Joi.string().valid("men", "kids", "women").optional(),
+    subcategory: Joi.string().valid("Shirts", "T-shirts", "Jacket").optional(),
+    variants: Joi.array()
+      .items(
+        Joi.object({
+          color: Joi.object({
+            name: Joi.string().optional(),
+            value: Joi.string().optional(),
+          }).optional(),
+          images: Joi.array()
+            .items(
+              Joi.object({
+                url: Joi.string()
+                  .uri()
+                  .pattern(
+                    new RegExp("^https://res.cloudinary.com/"),
+                    "URL must be a valid Cloudinary URL"
+                  )
+                  .required(),
+                publicId: Joi.string().optional(),
+              })
+            )
+            .optional(),
+          sizes: Joi.array()
+            .items(
+              Joi.object({
+                size: Joi.string().optional(),
+                quantity: Joi.number().min(0).optional(),
+              })
+            )
+            .optional(),
+        })
+      )
+      .optional(),
+  });
+
+  return schema.validate(obj);
+}
+
+module.exports = { Product, validateProduct, validateProductUpdate };
