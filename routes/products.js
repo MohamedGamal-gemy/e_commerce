@@ -1,87 +1,7 @@
-// const express = require("express");
-// const multer = require("multer");
-// const asyncHandler = require("express-async-handler");
-// const path = require("path");
-// const fs = require("fs");
-// const { Product, validateProduct } = require("../models/Product");
-//
-// const router = express.Router();
-//
-// const storage = multer.diskStorage({
-//   destination: (req, file, cb) => {
-//     const uploadPath = path.join(__dirname, "../uploads");
-//     if (!fs.existsSync(uploadPath)) {
-//       fs.mkdirSync(uploadPath, { recursive: true });
-//     }
-//     cb(null, uploadPath);
-//   },
-//   filename: (req, file, cb) => {
-//     const uniqueName = Date.now() + "--" + file.originalname;
-//     cb(null, uniqueName);
-//   },
-// });
-//
-// const upload = multer({ storage });
-//
-// router.post(
-//   "/",
-//   upload.any(),
-//   asyncHandler(async (req, res) => {
-//     const { error } = validateProduct(req.body);
-//     if (error) {
-//       return res.status(400).json({ message: error.details[0].message });
-//     }
-//
-//     const {
-//       title,
-//       description,
-//       price,
-//       category,
-//       subcategory,
-//       variants: variantsRaw,
-//     } = req.body;
-//
-//     let variants = [];
-//
-//     try {
-//       variants = JSON.parse(variantsRaw);
-//     } catch (err) {
-//       return res.status(400).json({ message: "Invalid JSON in variants" });
-//     }
-//
-//     variants.forEach((variant, index) => {
-//       const fieldName = `variant${index}Images`;
-//       const filesForVariant = req.files.filter(
-//         (f) => f.fieldname === fieldName
-//       );
-//
-//       variant.images = filesForVariant.map(
-//         (file) => `/uploads/${file.filename}`
-//       );
-//     });
-//
-//     const product = new Product({
-//       title,
-//       description,
-//       price,
-//       category,
-//       subcategory,
-//       variants,
-//     });
-//
-//     await product.save();
-//
-//     res.status(201).json({
-//       message: "Product created successfully",
-//       product,
-//     });
-//   })
-// );
-//
-
-// ######################################
 const express = require("express");
 const asyncHandler = require("express-async-handler");
+const cloudinary = require("../config/cloudinary");
+const upload = require("../middlewares/upload");
 const {
   Product,
   validateProduct,
@@ -92,30 +12,101 @@ const router = express.Router();
 
 router.post(
   "/",
+  upload.any(),
   asyncHandler(async (req, res) => {
-    const { error } = validateProduct(req.body);
-    if (error) {
-      return res.status(400).json({ message: error.details[0].message });
+    try {
+      let parsedVariants = req.body.variants;
+      if (typeof parsedVariants === "string") {
+        try {
+          parsedVariants = JSON.parse(parsedVariants);
+        } catch (parseErr) {
+          return res.status(400).json({ message: "Invalid JSON in variants" });
+        }
+      }
+
+      req.body.variants = parsedVariants;
+
+      const { error } = validateProduct(req.body);
+      if (error) {
+        console.log("Joi validation error:", error.details);
+        return res.status(400).json({ message: error.details[0].message });
+      }
+
+      const { title, description, price, category, subcategory } = req.body;
+      const files = req.files || [];
+
+      const variantImagesMap = {};
+      files.forEach((file) => {
+        const fieldName = file.fieldname;
+        const match = fieldName.match(/variantImages\[(\d+)\]/);
+        if (match) {
+          const variantIndex = parseInt(match[1], 10);
+          if (!variantImagesMap[variantIndex]) {
+            variantImagesMap[variantIndex] = [];
+          }
+          variantImagesMap[variantIndex].push(file);
+        }
+      });
+
+      for (let i = 0; i < parsedVariants.length; i++) {
+        if (!variantImagesMap[i] || variantImagesMap[i].length === 0) {
+          throw new Error(`At least one image is required for variant ${i}`);
+        }
+      }
+
+      const updatedVariants = await Promise.all(
+        parsedVariants.map(async (variant, index) => {
+          const variantImages = variantImagesMap[index] || [];
+
+          const images = await Promise.all(
+            variantImages.map(async (file) => {
+              const result = await new Promise((resolve, reject) => {
+                const stream = cloudinary.uploader.upload_stream(
+                  {
+                    folder: `products/variants/${variant.color.name}`,
+                  },
+                  (error, result) => {
+                    if (error) return reject(error);
+                    resolve(result);
+                  }
+                );
+                stream.end(file.buffer);
+              });
+
+              return {
+                url: result.secure_url,
+                publicId: result.public_id,
+              };
+            })
+          );
+
+          return {
+            ...variant,
+            images: images.length > 0 ? images : [],
+          };
+        })
+      );
+
+      const product = new Product({
+        title,
+        description,
+        price,
+        category,
+        subcategory,
+        variants: updatedVariants,
+      });
+
+      await product.save();
+      res.status(201).json({
+        message: "Product created successfully",
+        product,
+      });
+    } catch (error) {
+      console.error("Backend error:", error);
+      res
+        .status(500)
+        .json({ message: `Failed to add product: ${error.message}` });
     }
-
-    const { title, description, price, category, subcategory, variants } =
-      req.body;
-
-    const product = new Product({
-      title,
-      description,
-      price,
-      category,
-      subcategory,
-      variants,
-    });
-
-    await product.save();
-
-    res.status(201).json({
-      message: "Product created successfully",
-      // product,
-    });
   })
 );
 
