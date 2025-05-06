@@ -113,12 +113,12 @@ router.post(
 router.get(
   "/",
   asyncHandler(async (req, res) => {
-    const { category, subcategory } = req.query;
+    const { id, category, subcategory } = req.query;
 
     const filter = {};
     if (category) filter.category = category;
     if (subcategory) filter.subcategory = subcategory;
-
+    if (id) filter._id = id;
     const products = await Product.find(filter).sort({ createdAt: -1 });
 
     if (!products) {
@@ -129,52 +129,137 @@ router.get(
   })
 );
 
-router.patch(
+// single
+router.get(
   "/:id",
   asyncHandler(async (req, res) => {
+    const product = await Product.findById(req.params.id);
+    if (!product) {
+      return res.status(404).json({ message: "Product not found" });
+    }
+    res.json(product);
+  })
+);
+// router.patch(
+//   "/:id",
+//   asyncHandler(async (req, res) => {
+//     const { id } = req.params;
+//     const updateData = req.body;
+//     const { error } = validateProductUpdate(updateData);
+//     if (error) {
+//       return res.status(400).json({ message: error.details[0].message });
+//     }
+//     const updatedProduct = await Product.findByIdAndUpdate(id, updateData, {
+//       new: true,
+//       runValidators: true,
+//     });
+//
+//     if (!updatedProduct) {
+//       return res.status(404).json({ message: "Product not found" });
+//     }
+//
+//     res
+//       .status(200)
+//       .json({ message: "Update Product Success", data: updatedProduct });
+//   })
+// );
+
+router.patch(
+  "/:id",
+  upload.any(), // يستقبل أي ملفات مرفقة
+  asyncHandler(async (req, res) => {
     const { id } = req.params;
-    const updateData = req.body;
+
+    // 1. فك JSON عن variants الموجودة في body (إذا أُرسلت كسلسلة)
+    let updateData = { ...req.body };
+    if (typeof updateData.variants === "string") {
+      try {
+        updateData.variants = JSON.parse(updateData.variants);
+      } catch (err) {
+        return res.status(400).json({ message: "Invalid variants JSON" });
+      }
+    }
+
+    // 2. تحقق من صحة البيانات النصية أولاً
     const { error } = validateProductUpdate(updateData);
     if (error) {
       return res.status(400).json({ message: error.details[0].message });
     }
-    const updatedProduct = await Product.findByIdAndUpdate(id, updateData, {
-      new: true,
-      runValidators: true,
-    });
 
-    if (!updatedProduct) {
-      return res.status(404).json({ message: "Product not found" });
-    }
-
-    res.status(200).json(updatedProduct);
-  })
-);
-
-//
-
-router.patch(
-  "/:id/variant/:variantId/color",
-  asyncHandler(async (req, res) => {
-    const { id, variantId } = req.params;
-    const { name, value } = req.body;
-
+    // 3. ابحث عن المنتج الحالي
     const product = await Product.findById(id);
     if (!product) {
       return res.status(404).json({ message: "Product not found" });
     }
 
-    const variant = product.variants.id(variantId);
-    if (!variant) {
-      return res.status(404).json({ message: "Variant not found" });
+    // 4. رفع الصور الجديدة لكل variant
+    //    نفترض أن الصور مُرسلة بالحقل: variantImages[index]
+    const files = req.files || [];
+    const mapByVariant = {};
+    files.forEach((file) => {
+      const m = file.fieldname.match(/variantImages\[(\d+)\]/);
+      if (m) {
+        const idx = +m[1];
+        if (!mapByVariant[idx]) mapByVariant[idx] = [];
+        mapByVariant[idx].push(file);
+      }
+    });
+
+    // 5. للبيانات المرسلة في updateData.variants
+    //    دمج الصور المرفوعة حديثًا في كل variant
+    for (let idx = 0; idx < updateData.variants.length; idx++) {
+      const variant = updateData.variants[idx];
+      const toUpload = mapByVariant[idx] || [];
+
+      if (toUpload.length) {
+        // ارفع كل صورة وانتظر النتيجة
+        const uploaded = await Promise.all(
+          toUpload.map(
+            (file) =>
+              new Promise((resolve, reject) => {
+                cloudinary.uploader
+                  .upload_stream(
+                    { folder: "products/variants" },
+                    (err, result) => {
+                      if (err) return reject(err);
+                      resolve({
+                        url: result.secure_url,
+                        publicId: result.public_id,
+                      });
+                    }
+                  )
+                  .end(file.buffer);
+              })
+          )
+        );
+
+        // إذا variant.images موجودة أصلاً نصيف إليها، وإلا ننشئ الحقل
+        if (!Array.isArray(variant.images)) {
+          variant.images = [];
+        }
+        variant.images.push(...uploaded);
+      }
     }
 
-    if (name) variant.color.name = name;
-    if (value) variant.color.value = value;
+    // 6. حدّث الحقول الأساسية وفق updateData
+    //    (title, description, price, category, subcategory، إلخ)
+    //    ولحق المتغيرات الجديدة لـ product
+    ["title", "description", "price", "category", "subcategory"].forEach(
+      (f) => {
+        if (updateData[f] !== undefined) {
+          product[f] = updateData[f];
+        }
+      }
+    );
+    product.variants = updateData.variants;
 
+    // 7. احفظ المنتج المحدث
     await product.save();
 
-    res.status(200).json({ message: "Color updated", product });
+    res.status(200).json({
+      message: "Product updated successfully with new images",
+      data: product,
+    });
   })
 );
 

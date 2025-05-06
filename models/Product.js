@@ -165,6 +165,7 @@ function validateProductUpdate(obj) {
     variants: Joi.array()
       .items(
         Joi.object({
+          _id: Joi.string().optional(),
           color: Joi.object({
             name: Joi.string().optional(),
             value: Joi.string().optional(),
@@ -172,14 +173,14 @@ function validateProductUpdate(obj) {
           images: Joi.array()
             .items(
               Joi.object({
-                url: Joi.string()
-                  .uri()
-                  .pattern(
-                    new RegExp("^https://res.cloudinary.com/"),
-                    "URL must be a valid Cloudinary URL"
-                  )
-                  .required(),
+                url: Joi.string().optional(),
+                // .uri()
+                // .pattern(
+                //   new RegExp("^https://res.cloudinary.com/"),
+                //   "URL must be a valid Cloudinary URL"
+                // )
                 publicId: Joi.string().optional(),
+                _id: Joi.string().optional(),
               })
             )
             .optional(),
@@ -188,11 +189,13 @@ function validateProductUpdate(obj) {
               Joi.object({
                 size: Joi.string().optional(),
                 quantity: Joi.number().min(0).optional(),
+                _id: Joi.string().optional(),
               })
             )
             .optional(),
         })
       )
+
       .optional(),
   });
 

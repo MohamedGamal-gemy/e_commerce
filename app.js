@@ -13,6 +13,10 @@ app.use(cors());
 
 app.use(logger);
 
+app.use("/api/address", require("./routes/addressRoutes"));
+//
+app.use("/api/products", require("./routes/productFilter"));
+//
 app.use("/api/users", require("./routes/users"));
 app.use("/api/products", require("./routes/products"));
 app.use("/api/auth", require("./routes/auth"));
