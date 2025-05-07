@@ -113,13 +113,17 @@ router.post(
 router.get(
   "/",
   asyncHandler(async (req, res) => {
-    const { id, category, subcategory } = req.query;
+    const { category, subcategory } = req.query;
 
     const filter = {};
     if (category) filter.category = category;
-    if (subcategory) filter.subcategory = subcategory;
-    if (id) filter._id = id;
-    const products = await Product.find(filter).sort({ createdAt: -1 });
+    if (subcategory) {
+      filter.subcategory = { $in: subcategory.split(",") };
+    }
+    
+    const products = await Product.find(filter)
+      .sort({ createdAt: -1 })
+      .select("-__v");
 
     if (!products) {
       return res.status(404).json({ message: "No products found" });
