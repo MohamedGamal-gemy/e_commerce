@@ -120,7 +120,7 @@ router.get(
     if (subcategory) {
       filter.subcategory = { $in: subcategory.split(",") };
     }
-    
+
     const products = await Product.find(filter)
       .sort({ createdAt: -1 })
       .select("-__v");
@@ -144,29 +144,6 @@ router.get(
     res.json(product);
   })
 );
-// router.patch(
-//   "/:id",
-//   asyncHandler(async (req, res) => {
-//     const { id } = req.params;
-//     const updateData = req.body;
-//     const { error } = validateProductUpdate(updateData);
-//     if (error) {
-//       return res.status(400).json({ message: error.details[0].message });
-//     }
-//     const updatedProduct = await Product.findByIdAndUpdate(id, updateData, {
-//       new: true,
-//       runValidators: true,
-//     });
-//
-//     if (!updatedProduct) {
-//       return res.status(404).json({ message: "Product not found" });
-//     }
-//
-//     res
-//       .status(200)
-//       .json({ message: "Update Product Success", data: updatedProduct });
-//   })
-// );
 
 router.patch(
   "/:id",
@@ -261,7 +238,7 @@ router.patch(
     await product.save();
 
     res.status(200).json({
-      message: "Product updated successfully with new images",
+      message: "Product updated successfully ",
       data: product,
     });
   })
