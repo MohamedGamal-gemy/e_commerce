@@ -1,23 +1,29 @@
 const express = require("express");
 const router = express.Router();
-const Product = require("../models/Product"); // أو حسب مكان الملف
+const { Product } = require("../models/Product");
 
-// API to get filters
 router.get("/filters", async (req, res) => {
   try {
-    // نجيب كل أنواع الملابس بدون تكرار
-    const subcategories = await Product.distinct("subcategory");
+    const { category } = req.query;
 
-    // نجيب كل الألوان بدون تكرار
-    const colors = await Product.distinct("variants.color.name");
+    const query = {};
 
-    // نجيب كل المقاسات بدون تكرار
-    const sizes = await Product.distinct("variants.sizes.size");
+    if (category) {
+      query.category = category;
+    }
+
+    const subcategories = await Product.distinct("subcategory", query);
+
+    const colors = await Product.distinct("variants.color.name", query);
+
+    const sizes = await Product.distinct("variants.sizes.size", query);
+    const prises = await Product.distinct("price", query);
 
     res.json({
       subcategories,
       colors,
       sizes,
+      prises,
     });
   } catch (error) {
     console.error(error);

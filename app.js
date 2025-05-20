@@ -1,9 +1,10 @@
 const express = require("express");
+require("dotenv").config();
 const cors = require("cors");
 const logger = require("./middlewares/logger");
 const { notFound, errorHandler } = require("./middlewares/errors");
 const connectToDB = require("./config/db");
-require("dotenv").config();
+const mongoose = require("mongoose");
 const app = express();
 app.use(express.json());
 
@@ -25,5 +26,7 @@ app.use("/api/stripe", require("./routes/stripe"));
 app.use(notFound);
 app.use(errorHandler);
 
-const PORT = process.env.PORT || 4000;
+
+const PORT = process.env.PORT || 7000;
+// const PORT = 4000;
 app.listen(PORT, () => console.log(`server listening on port ${PORT}`));

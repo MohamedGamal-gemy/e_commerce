@@ -110,22 +110,39 @@ router.post(
   })
 );
 
+
 router.get(
   "/",
   asyncHandler(async (req, res) => {
-    const { category, subcategory } = req.query;
+    const { category, subcategory, color, minPrice, maxPrice } = req.query;
 
     const filter = {};
+
     if (category) filter.category = category;
+
     if (subcategory) {
       filter.subcategory = { $in: subcategory.split(",") };
+    }
+
+    if (color) {
+      filter["variants"] = {
+        $elemMatch: {
+          "color.name": { $in: color.split(",") },
+        },
+      };
+    }
+
+    if (minPrice || maxPrice) {
+      filter.price = {};
+      if (minPrice) filter.price.$gte = Number(minPrice);
+      if (maxPrice) filter.price.$lte = Number(maxPrice);
     }
 
     const products = await Product.find(filter)
       .sort({ createdAt: -1 })
       .select("-__v");
 
-    if (!products) {
+    if (!products || products.length === 0) {
       return res.status(404).json({ message: "No products found" });
     }
 
@@ -133,7 +150,6 @@ router.get(
   })
 );
 
-// single
 router.get(
   "/:id",
   asyncHandler(async (req, res) => {
@@ -147,11 +163,10 @@ router.get(
 
 router.patch(
   "/:id",
-  upload.any(), // يستقبل أي ملفات مرفقة
+  upload.any(),
   asyncHandler(async (req, res) => {
     const { id } = req.params;
 
-    // 1. فك JSON عن variants الموجودة في body (إذا أُرسلت كسلسلة)
     let updateData = { ...req.body };
     if (typeof updateData.variants === "string") {
       try {
@@ -161,20 +176,16 @@ router.patch(
       }
     }
 
-    // 2. تحقق من صحة البيانات النصية أولاً
     const { error } = validateProductUpdate(updateData);
     if (error) {
       return res.status(400).json({ message: error.details[0].message });
     }
 
-    // 3. ابحث عن المنتج الحالي
     const product = await Product.findById(id);
     if (!product) {
       return res.status(404).json({ message: "Product not found" });
     }
 
-    // 4. رفع الصور الجديدة لكل variant
-    //    نفترض أن الصور مُرسلة بالحقل: variantImages[index]
     const files = req.files || [];
     const mapByVariant = {};
     files.forEach((file) => {
@@ -186,14 +197,11 @@ router.patch(
       }
     });
 
-    // 5. للبيانات المرسلة في updateData.variants
-    //    دمج الصور المرفوعة حديثًا في كل variant
     for (let idx = 0; idx < updateData.variants.length; idx++) {
       const variant = updateData.variants[idx];
       const toUpload = mapByVariant[idx] || [];
 
       if (toUpload.length) {
-        // ارفع كل صورة وانتظر النتيجة
         const uploaded = await Promise.all(
           toUpload.map(
             (file) =>
@@ -214,7 +222,6 @@ router.patch(
           )
         );
 
-        // إذا variant.images موجودة أصلاً نصيف إليها، وإلا ننشئ الحقل
         if (!Array.isArray(variant.images)) {
           variant.images = [];
         }
@@ -222,9 +229,6 @@ router.patch(
       }
     }
 
-    // 6. حدّث الحقول الأساسية وفق updateData
-    //    (title, description, price, category, subcategory، إلخ)
-    //    ولحق المتغيرات الجديدة لـ product
     ["title", "description", "price", "category", "subcategory"].forEach(
       (f) => {
         if (updateData[f] !== undefined) {
@@ -234,7 +238,6 @@ router.patch(
     );
     product.variants = updateData.variants;
 
-    // 7. احفظ المنتج المحدث
     await product.save();
 
     res.status(200).json({
