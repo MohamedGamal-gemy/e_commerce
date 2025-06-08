@@ -110,7 +110,6 @@ router.post(
   })
 );
 
-
 router.get(
   "/",
   asyncHandler(async (req, res) => {
@@ -137,10 +136,11 @@ router.get(
       if (minPrice) filter.price.$gte = Number(minPrice);
       if (maxPrice) filter.price.$lte = Number(maxPrice);
     }
+    const sortSelector = req.query.sort;
 
     const products = await Product.find(filter)
-      .sort({ createdAt: -1 })
-      .select("-__v");
+      .sort({ price: sortSelector === "high" ? -1 : 1 })
+      .select("-__v");  
 
     if (!products || products.length === 0) {
       return res.status(404).json({ message: "No products found" });
