@@ -109,11 +109,20 @@ router.post(
     }
   })
 );
-
 router.get(
   "/",
   asyncHandler(async (req, res) => {
-    const { category, subcategory, color, minPrice, maxPrice } = req.query;
+    const {
+      category,
+      subcategory,
+      color,
+      minPrice,
+      maxPrice,
+      sort,
+      title,
+      page = 1,
+      limit = 8,
+    } = req.query;
 
     const filter = {};
 
@@ -136,20 +145,89 @@ router.get(
       if (minPrice) filter.price.$gte = Number(minPrice);
       if (maxPrice) filter.price.$lte = Number(maxPrice);
     }
-    const sortSelector = req.query.sort;
 
+    if (title) {
+      filter.title = { $regex: title, $options: "i" };
+    }
+
+    const sortSelector = sort === "high" ? -1 : 1;
+
+    // تحويل page و limit إلى أرقام صحيحة
+    const currentPage = Number(page) || 1;
+    const pageSize = Number(limit) || 8;
+    const skip = (currentPage - 1) * pageSize;
+
+    // حساب عدد النتائج
+    const totalItems = await Product.countDocuments(filter);
+
+    // إحضار النتائج مع التخطي والحد
     const products = await Product.find(filter)
-      .sort({ price: sortSelector === "high" ? -1 : 1 })
-      .select("-__v");  
+      .sort({ price: sortSelector })
+      .skip(skip)
+      .limit(pageSize)
+      .select("-__v");
 
     if (!products || products.length === 0) {
       return res.status(404).json({ message: "No products found" });
     }
 
-    res.status(200).json(products);
+    res.status(200).json({
+      products,
+      currentPage,
+      totalPages: Math.ceil(totalItems / pageSize),
+      totalItems,
+    });
   })
 );
 
+// router.get(
+//   "/",
+//   asyncHandler(async (req, res) => {
+//     const { category, subcategory, color, minPrice, maxPrice, sort, title } =
+//       req.query;
+
+//     const filter = {};
+
+//     if (category) filter.category = category;
+
+//     if (subcategory) {
+//       filter.subcategory = { $in: subcategory.split(",") };
+//     }
+
+//     if (color) {
+//       filter["variants"] = {
+//         $elemMatch: {
+//           "color.name": { $in: color.split(",") },
+//         },
+//       };
+//     }
+
+//     if (minPrice || maxPrice) {
+//       filter.price = {};
+//       if (minPrice) filter.price.$gte = Number(minPrice);
+//       if (maxPrice) filter.price.$lte = Number(maxPrice);
+//     }
+
+//     if (title) {
+//       filter.title = { $regex: title, $options: "i" }; // بحث غير حساس لحالة الحروف
+//     }
+
+//     const sortSelector = sort;
+
+//     const products = await Product.find(filter)
+//       .sort({ price: sortSelector === "high" ? -1 : 1 })
+//       .select("-__v")
+//       .limit(8);
+
+//     if (!products || products.length === 0) {
+//       return res.status(404).json({ message: "No products found" });
+//     }
+
+//     res.status(200).json(products);
+//   })
+// );
+
+//
 router.get(
   "/:id",
   asyncHandler(async (req, res) => {
