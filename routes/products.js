@@ -161,18 +161,39 @@ router.get(
     const totalItems = await Product.countDocuments(filter);
 
     // إحضار النتائج مع التخطي والحد
+    // const products = await Product.find(filter)
+    //   .sort({ price: sortSelector })
+    //   .skip(skip)
+    //   .limit(pageSize)
+    //   .select("-__v");
+
     const products = await Product.find(filter)
       .sort({ price: sortSelector })
       .skip(skip)
       .limit(pageSize)
       .select("-__v");
+    // .countDocuments();
 
-    if (!products || products.length === 0) {
-      return res.status(404).json({ message: "No products found" });
-    }
+    // 🟡 تقطيع الصور داخل كل variant بعد الاستعلام
+    const updatedProducts = products.map((product) => {
+      const productObj = product.toObject(); // نحوله إلى كائن عادي علشان نقدر نعدّل عليه
+
+      productObj.variants = productObj.variants.map((variant) => {
+        return {
+          ...variant,
+          images: variant.images.slice(0, 2), // أول صورتين فقط
+        };
+      });
+
+      return productObj;
+    });
+
+    // if (!products || products.length === 0) {
+    //   return res.status(404).json({ message: "No products found" });
+    // }
 
     res.status(200).json({
-      products,
+      products: updatedProducts, // ممكن تبقى []، وده طبيعي
       currentPage,
       totalPages: Math.ceil(totalItems / pageSize),
       totalItems,
