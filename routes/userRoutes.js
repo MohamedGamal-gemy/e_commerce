@@ -1,7 +1,7 @@
 const express = require("express");
 const bcrypt = require("bcryptjs");
 const asyncHandler = require("express-async-handler");
-const { User, validateUpdateUser } = require("../models/User");
+const { User, validateUpdateUser } = require("../models/userModel");
 const {
   verifyTokenAndAuthorization,
   verifyTokenAndAdmin,
@@ -15,9 +15,9 @@ const router = express.Router();
  * @method GET
  * @access private (only admin)
  */
+// verifyTokenAndAdmin,
 router.get(
   "/",
-  verifyTokenAndAdmin,
   asyncHandler(async (req, res) => {
     const users = await User.find().select("-password");
     res.json(users);

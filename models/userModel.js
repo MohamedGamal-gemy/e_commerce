@@ -12,7 +12,7 @@ const UserSchema = new mongoose.Schema(
       minlength: 5,
       maxlength: 100,
     },
-    name: {
+    username: {
       type: String,
       required: true,
       trim: true,
@@ -30,7 +30,7 @@ const UserSchema = new mongoose.Schema(
       default: false,
     },
   },
-  { timeseries: true }
+  { timestamps: true }
 );
 // Generate Token
 UserSchema.methods.generateToken = function () {
@@ -47,7 +47,7 @@ const User = mongoose.model("User", UserSchema);
 function validateRegisterUser(obj) {
   const schema = Joi.object({
     email: Joi.string().trim().min(5).max(100).required().email(),
-    name: Joi.string().trim().min(3).max(200).required(),
+    username: Joi.string().trim().min(3).max(200).required(),
     password: Joi.string().trim().min(6).required(),
   });
   return schema.validate(obj);
@@ -65,7 +65,7 @@ function validateLoginUser(obj) {
 function validateUpdateUser(obj) {
   const schema = Joi.object({
     email: Joi.string().trim().min(5).max(100).email(),
-    name: Joi.string().trim().min(3).max(200),
+    username: Joi.string().trim().min(3).max(200),
     password: Joi.string().trim().min(6),
   });
   return schema.validate(obj);

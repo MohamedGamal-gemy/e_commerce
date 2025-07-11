@@ -18,14 +18,20 @@ app.use("/api/address", require("./routes/addressRoutes"));
 //
 app.use("/api/products", require("./routes/productFilter"));
 //
-app.use("/api/users", require("./routes/users"));
+app.use("/api/orders", require("./routes/order"));
+app.use("/api/cart", require("./routes/cart"));
+app.use("/api/variants", require("./routes/variantsRouter"));
+app.use("/api/categories", require("./routes/categoriesRoutes"));
+app.use("/api/subcategories", require("./routes/subcategoriesRoutes"));
+//
+app.use("/api/users", require("./routes/userRoutes"));
 app.use("/api/products", require("./routes/products"));
+app.use("/api/reviews", require("./routes/reviewRoutes"));
 app.use("/api/auth", require("./routes/auth"));
 // app.use("/api/stripe", require("./routes/stripe"));
 // error
 app.use(notFound);
 app.use(errorHandler);
-
 
 const PORT = process.env.PORT || 7000;
 // const PORT = 4000;
