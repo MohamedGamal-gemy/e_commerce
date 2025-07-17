@@ -4,44 +4,48 @@ const router = express.Router();
 const asyncHandler = require("express-async-handler");
 const Review = require("../models/reviewModel");
 const { Product } = require("../models/productModel");
+const { protect } = require("../middlewares/protect");
 
 // @desc   Add a new review
 // @route  POST /api/reviews
 // @access Public (يفضل لاحقًا تحط middleware للحماية)
 router.post(
   "/",
+  protect,
   asyncHandler(async (req, res) => {
-    const { product, user, name, rating, comment } = req.body;
+    const userId = req.user._id; // من Middleware auth
+    const { productId, rating, comment } = req.body;
 
-    if (!product || !user || !rating || !comment) {
+    // ✅ تحقق من الحقول
+    if (!productId || !rating || !comment) {
       return res.status(400).json({ message: "All fields are required." });
     }
 
-    // optional: prevent duplicate review from same user
-    const existingReview = await Review.findOne({ product, user });
+    // ✅ منع تكرار الريفيو لنفس المنتج من نفس المستخدم
+    const existingReview = await Review.findOne({ productId, userId });
     if (existingReview) {
-      return res
-        .status(400)
-        .json({ message: "You have already reviewed this product." });
+      return res.status(400).json({
+        message: "You have already reviewed this product.",
+      });
     }
 
+    // ✅ إنشاء الريفيو
     const review = new Review({
-      product,
-      user,
-      //   name,
+      productId,
+      userId,
       rating: Number(rating),
       comment,
     });
 
     await review.save();
 
-    // update product rating and numReviews
-    const reviews = await Review.find({ product });
+    // ✅ تحديث تقييم المنتج وعدد المراجعات
+    const reviews = await Review.find({ productId });
     const numReviews = reviews.length;
     const averageRating =
       reviews.reduce((acc, item) => acc + item.rating, 0) / numReviews;
 
-    await Product.findByIdAndUpdate(product, {
+    await Product.findByIdAndUpdate(productId, {
       rating: averageRating.toFixed(1),
       numReviews,
     });
@@ -55,24 +59,14 @@ router.get(
   asyncHandler(async (req, res) => {
     const { productId } = req.params;
 
-    const reviews = await Review.find({ product: productId }).populate(
-      "user",
-      "username"
-    );
+    const reviews = await Review.find({ productId })
+      .populate("userId", "username")
+      .sort({ createdAt: -1 });
 
-    res.status(200).json(reviews);
+    res.json(reviews);
   })
 );
+
 //
-router.get(
-  "/",
-  asyncHandler(async (req, res) => {
-    const reviews = await Review.find({})
-      .populate("user", "username")
-      .populate("product", "title");
-
-    res.status(200).json(reviews);
-  })
-);
 
 module.exports = router;

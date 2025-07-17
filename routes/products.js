@@ -150,268 +150,155 @@ const router = express.Router();
 //     // .populate("subcategory");
 //   })
 // );
-// router.get(
-//   "/show",
-//   asyncHandler(async (req, res) => {
-//     const { subcategory } = req.query;
-//     const query = {};
-//     // if (subcategory) query.subcategory.name;
-//     const products = await Product.find(
-//       { "subcategory.name": "sweetshirt" },
-//       "title rating price numReviews subcategory variants"
-//     )
-//       .populate("variants")
-//       .populate("subcategory")
-//       .limit(10)
-//       .lean();
-//     const filtered = products?.map((product) => {
-//       const firstImage = product.variants[0]?.images[0]?.url;
-//       const secondImage = product.variants[0]?.images[1]?.url;
-//       const imagesColorsOfVariants = product.variants.map((variant) => {
-//         return variant.images[0].url;
-//       });
-//       console.log(imagesColorsOfVariants);
-
-//       return {
-//         _id: product._id,
-//         title: product.title,
-//         price: product.price,
-//         rating: product.rating,
-//         numReviews: product.numReviews,
-//         subcategory: product.subcategory,
-//         firstImage,
-//         secondImage,
-//         imagesColorsOfVariants:
-//           imagesColorsOfVariants.length > 1 ? imagesColorsOfVariants : null,
-//       };
-//     });
-//     res.json(filtered);
-//   })
-// );
-
-// router.get(
-//   "/show",
-//   asyncHandler(async (req, res) => {
-//     const { subcategory, limit = 8, page = 1 } = req.query;
-
-//     const filter = {};
-
-//     if (subcategory) {
-//       filter.subcategory = subcategory;
-//     }
-
-//     const products = await Product.find(
-//       filter,
-//       "title rating price numReviews subcategory variants"
-//     )
-//       .populate("variants", "images")
-//       .limit(limit)
-//       .skip((+page - 1) * limit)
-//       .lean();
-
-//     const filtered = products?.map((product) => {
-//       const firstImage = product.variants?.[0]?.images?.[0]?.url ?? null;
-//       const secondImage = product.variants?.[0]?.images?.[1]?.url ?? null;
-
-//       const imagesColorsOfVariants = product.variants
-//         .map((variant) => variant.images?.[0]?.url)
-//         .filter(Boolean);
-
-//       return {
-//         _id: product._id,
-//         title: product.title,
-//         price: product.price,
-//         rating: product.rating,
-//         numReviews: product.numReviews,
-//         subcategory: product.subcategory,
-//         firstImage,
-//         secondImage,
-//         imagesColorsOfVariants:
-//           imagesColorsOfVariants.length > 1 ? imagesColorsOfVariants : [],
-//       };
-//     });
-//     const totalCount = await Product.countDocuments();
-//     const totalPages = Math.ceil(totalCount / +limit);
-
-//     res.json({ products: filtered, totalPages, currentPage: +page });
-//   })
-// );
-// router.get(
-//   "/show",
-//   asyncHandler(async (req, res) => {
-//     const { subcategory, limit = 8, page = 1 } = req.query;
-
-//     const filter = {};
-
-//     if (subcategory) {
-//       filter.subcategory = subcategory;
-//     }
-
-//     const products = await Product.find(
-//       filter,
-//       "title rating price numReviews subcategory variants"
-//     )
-//       .populate("variants", "images")
-//       .populate("subcategory")
-//       .limit(+limit)
-//       .skip((+page - 1) * +limit)
-//       .lean();
-
-//     const filtered = products.map((product) => {
-//       const firstImage = product.variants?.[0]?.images?.[0]?.url ?? null;
-//       const secondImage = product.variants?.[0]?.images?.[1]?.url ?? null;
-
-//       const imagesColorsOfVariants = product.variants
-//         .map((variant) => variant.images?.[0]?.url)
-//         .filter(Boolean);
-
-//       return {
-//         _id: product._id,
-//         title: product.title,
-//         price: product.price,
-//         rating: product.rating,
-//         numReviews: product.numReviews,
-//         subcategory: product.subcategory,
-//         firstImage,
-//         secondImage,
-//         imagesColorsOfVariants,
-//       };
-//     });
-
-//     const totalCount = await Product.countDocuments(filter);
-//     const totalPages = Math.ceil(totalCount / +limit);
-
-//     res.json({ products: filtered, totalPages, currentPage: +page });
-//   })
-// );
-
 
 const Subcategory = require("../models/subcategoryModel");
+const ProductVariant = require("../models/variantsModel");
 
 router.get(
   "/show",
   asyncHandler(async (req, res) => {
-    const { subcategory, limit = 8, page = 1 } = req.query;
+    const {
+      subcategory,
+      color,
+      minPrice,
+      maxPrice,
+      title,
+      sort = "newest", // default
+      limit = 8,
+      page = 1,
+    } = req.query;
 
     const filter = {};
+    let productIdsByColor = [];
 
+    // ✅ Subcategory filter
     if (subcategory) {
-      const namesArray = subcategory.toString().split(",");
-
-      // هنجيب الـ _id المقابلة للأسماء
-      const matched = await Subcategory.find({
-        name: { $in: namesArray },
+      const subNames = subcategory.split(",");
+      const matchedSubs = await Subcategory.find({
+        name: { $in: subNames },
       }).select("_id");
-
-      const subcategoryIds = matched.map((s) => s._id);
-
-      if (subcategoryIds.length > 0) {
-        filter.subcategory = { $in: subcategoryIds };
+      const subIds = matchedSubs.map((s) => s._id);
+      if (subIds.length > 0) {
+        filter.subcategory = { $in: subIds };
       } else {
-        // لو مفيش تطابق، رجّع فاضي مباشرة
-        return res.json({ products: [], totalPages: 0, currentPage: +page });
+        return res.json({
+          products: [],
+          totalPages: 0,
+          currentPage: +page,
+          priceRange: { min: 0, max: 0 },
+        });
       }
     }
 
-    const products = await Product.find(
-      filter,
-      "title rating price numReviews subcategory variants"
-    )
-      .populate("variants", "images")
-      .populate("subcategory")
+    // ✅ Color filter
+    if (color) {
+      const colorsArray = color.split(",");
+      const matchedVariants = await ProductVariant.find({
+        "color.name": { $in: colorsArray },
+      }).select("productId");
+      productIdsByColor = matchedVariants.map((v) => v.productId.toString());
+      if (productIdsByColor.length > 0) {
+        filter._id = { $in: productIdsByColor };
+      } else {
+        return res.json({
+          products: [],
+          totalPages: 0,
+          currentPage: +page,
+          priceRange: { min: 0, max: 0 },
+        });
+      }
+    }
+
+    // ✅ Price filter
+    if (minPrice || maxPrice) {
+      filter.price = {};
+      if (minPrice) filter.price.$gte = Number(minPrice);
+      if (maxPrice) filter.price.$lte = Number(maxPrice);
+    }
+
+    // ✅ Title search
+    if (title) {
+      filter.title = { $regex: title, $options: "i" };
+    }
+
+    // ✅ Sorting
+    let sortOption = {};
+    switch (sort) {
+      case "price-asc":
+        sortOption.price = 1;
+        break;
+      case "price-desc":
+        sortOption.price = -1;
+        break;
+      case "rating":
+        sortOption.rating = -1;
+        break;
+      case "new":
+        sortOption.createdAt = -1;
+        break;
+      case "old":
+        sortOption.createdAt = 1;
+        break;
+      default:
+        sortOption.createdAt = -1; // newest first
+    }
+
+    const skip = (+page - 1) * +limit;
+
+    // ✅ Get products
+    const products = await Product.find(filter)
+      .populate({ path: "variants", select: "images color" })
+      .populate("subcategory", "name")
+      .populate("category", "name")
+      .sort(sortOption)
       .limit(+limit)
-      .skip((+page - 1) * +limit)
+      .skip(skip)
       .lean();
 
-    const filtered = products.map((product) => {
-      const firstImage = product.variants?.[0]?.images?.[0]?.url ?? null;
-      const secondImage = product.variants?.[0]?.images?.[1]?.url ?? null;
+    // ✅ Format products
+    const formattedProducts = products.map((product) => ({
+      _id: product._id,
+      title: product.title,
+      price: product.price,
+      rating: product.rating,
+      numReviews: product.numReviews,
+      subcategory: product.subcategory,
+      category: product.category,
+      firstImage: product.variants?.[0]?.images?.[0]?.url || null,
+    }));
 
-      const imagesColorsOfVariants = product.variants
-        .map((variant) => variant.images?.[0]?.url)
-        .filter(Boolean);
-
-      return {
-        _id: product._id,
-        title: product.title,
-        price: product.price,
-        rating: product.rating,
-        numReviews: product.numReviews,
-        subcategory: product.subcategory,
-        firstImage,
-        secondImage,
-        imagesColorsOfVariants,
-      };
-    });
-
+    // ✅ Count and pages
     const totalCount = await Product.countDocuments(filter);
     const totalPages = Math.ceil(totalCount / +limit);
 
-    res.json({ products: filtered, totalPages, currentPage: +page });
-  })
-);
-
-router.get(
-  "/",
-  asyncHandler(async (req, res) => {
-    const { limit = 8, page = 1 } = req.query;
-    const currentPage = Number(page) || 1;
-    const pageSize = Number(limit) || 8;
-    const skip = (currentPage - 1) * pageSize;
-
-    const products = await Product.find()
-      .skip(skip)
-      .limit(pageSize)
-      .populate({
-        path: "variants",
-        populate: {
-          path: "images",
-          select: "url",
+    // ✅ Get real price range
+    const priceStats = await Product.aggregate([
+      {
+        $group: {
+          _id: null,
+          minPrice: { $min: "$price" },
+          maxPrice: { $max: "$price" },
         },
-      })
-      .populate("category")
-      .populate("subcategory");
+      },
+    ]);
+    const priceRange = priceStats[0] || { minPrice: 0, maxPrice: 0 };
 
-    const filtered = products.map((prod) => {
-      const firstImage =
-        prod.variants?.[0]?.images?.[0]?.url || "/fallback.jpg";
-
-      return {
-        _id: prod._id,
-        title: prod.title,
-        price: prod.price,
-        description: prod.description,
-        rating: prod.rating,
-        numReviews: prod.numReviews,
-        category: prod.category,
-        subcategory: prod.subcategory,
-        createdAt: prod.createdAt,
-        firstImage, // ✅ أهم سطر
-      };
+    res.json({
+      products: formattedProducts,
+      totalPages,
+      currentPage: +page,
+      priceRange, // ✅ رجعها للواجهة
     });
-    const totalCount = await Product.countDocuments();
-    const totalPages = Math.ceil(totalCount / pageSize);
-
-    res.json({ products: filtered, currentPage, totalPages });
   })
 );
 
 router.get(
-  "/:id",
+  "/every",
   asyncHandler(async (req, res) => {
-    const product = await Product.findById(req.params.id)
-      .populate("category")
-      .populate("subcategory")
-      .populate("variants");
-
-    if (!product) {
-      return res.status(404).json({ message: "Product not found" });
-    }
-
-    res.json(product);
+    const products = await Product.find();
+    return res.json(products);
   })
 );
-
 // router.patch(
 //   "/:id",
 //   asyncHandler(async (req, res) => {
@@ -596,16 +483,16 @@ router.patch(
 //   })
 // );
 
-// router.get(
-//   "/:id",
-//   asyncHandler(async (req, res) => {
-//     const product = await Product.findById(req.params.id);
-//     if (!product) {
-//       return res.status(404).json({ message: "Product not found" });
-//     }
-//     res.json(product);
-//   })
-// );
+router.get(
+  "/:id",
+  asyncHandler(async (req, res) => {
+    const product = await Product.findById(req.params.id).populate("variants");
+    if (!product) {
+      return res.status(404).json({ message: "Product not found" });
+    }
+    res.json(product);
+  })
+);
 
 router.patch(
   "/:id",
