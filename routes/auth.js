@@ -1,13 +1,13 @@
 const express = require("express");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
-
 const expressAsyncHandler = require("express-async-handler");
 const {
   validateRegisterUser,
   User,
   validateLoginUser,
 } = require("../models/userModel");
+
 const router = express.Router();
 
 /**
@@ -16,34 +16,6 @@ const router = express.Router();
  * @method POST
  * @access public
  */
-
-// router.post(
-//   "/register",
-//   expressAsyncHandler(async (req, res) => {
-//     // console.log(req.body);
-//     const { email, username, password } = req.body;
-//     const { error } = validateRegisterUser(req.body);
-//     if (error) {
-//       return res.status(400).json({ message: error.details[0].message });
-//     }
-//     let user = await User.findOne({ email });
-//     if (user) {
-//       return res.status(400).json({ message: "this user already registered" });
-//     }
-//     const salt = await bcrypt.genSalt(10);
-//     const passwordHash = await bcrypt.hash(password, salt);
-//     user = new User({
-//       email,
-//       username,
-//       password: passwordHash,
-//     });
-//     const result = await user.save();
-//     const token = user.generateToken();
-//     const { password, ...other } = result._doc;
-//     res.status(201).json({ ...other, message: "Success Register", token });
-//   })
-// );
-
 router.post(
   "/register",
   expressAsyncHandler(async (req, res) => {
@@ -73,7 +45,6 @@ router.post(
       username,
       password: passwordHash,
     });
-    // console.log("user", user);
 
     const savedUser = await user.save();
     const token = user.generateToken();
@@ -81,21 +52,31 @@ router.post(
     const userObj = savedUser.toObject();
     delete userObj.password;
 
+    // Set token in cookie
+    res.cookie("token", token, {
+      httpOnly: true, // Prevent client-side access to the cookie
+      secure: process.env.NODE_ENV === "production", // Use secure in production
+      maxAge: 24 * 60 * 60 * 1000, // Cookie expiry: 1 day
+      sameSite: "strict", // Prevent CSRF
+    });
+
     res.status(201).json({
       ...userObj,
       message: "Registration successful.",
-      token,
     });
   })
 );
 
+router.post("/logout", (req, res) => {
+  res.clearCookie("token");
+  res.json({ message: "Logout successful" });
+});
 /**
  * @description Login User
  * @route /api/auth/login
  * @method POST
  * @access public
  */
-
 router.post(
   "/login",
   expressAsyncHandler(async (req, res) => {
@@ -104,22 +85,34 @@ router.post(
     if (error) {
       return res.status(400).json({ message: error.details[0].message });
     }
+
     let user = await User.findOne({ email: req.body.email });
     if (!user) {
-      return res.status(400).json({ message: "invalid email" });
+      return res.status(400).json({ message: "Invalid email" });
     }
-    // console.log("user", user);
 
     const isPasswordMatch = await bcrypt.compare(
       req.body.password,
       user.password
     );
     if (!isPasswordMatch) {
-      return res.status(400).json({ message: "invalid password" });
+      return res.status(400).json({ message: "Invalid password" });
     }
+
     const token = user.generateToken();
     const { password, ...other } = user._doc;
-    res.status(201).json({ ...other, message: "Success Login", token });
+
+    // Set token in cookie
+    res.cookie("token", token, {
+      httpOnly: true, // Prevent client-side access to the cookie
+      // secure: process.env.NODE_ENV === "production", // Use secure in production
+      secure: false, // Use secure in production
+      maxAge: 24 * 60 * 60 * 1000, // Cookie expiry: 1 day
+      // sameSite: "strict", // Prevent CSRF
+      sameSite: "lax", // Prevent CSRF
+    });
+
+    res.status(200).json({ ...other, message: "Login successful" });
   })
 );
 

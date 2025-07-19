@@ -1,6 +1,7 @@
 const mongoose = require("mongoose");
 const Joi = require("joi");
 const jwt = require("jsonwebtoken");
+
 // User schema
 const UserSchema = new mongoose.Schema(
   {
@@ -32,18 +33,19 @@ const UserSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
+
 // Generate Token
 UserSchema.methods.generateToken = function () {
   return jwt.sign(
     { id: this._id, isAdmin: this.isAdmin },
-    process.env.JWT_SECRET_KEY
+    process.env.JWT_SECRET_KEY,
+    { expiresIn: "1d" } // Token expires in 1 day
   );
 };
 
 const User = mongoose.model("User", UserSchema);
 
-// validation Register User
-
+// Validation for Register User
 function validateRegisterUser(obj) {
   const schema = Joi.object({
     email: Joi.string().trim().min(5).max(100).required().email(),
@@ -52,8 +54,8 @@ function validateRegisterUser(obj) {
   });
   return schema.validate(obj);
 }
-// validation Login User
 
+// Validation for Login User
 function validateLoginUser(obj) {
   const schema = Joi.object({
     email: Joi.string().trim().min(5).max(100).required().email(),
@@ -61,7 +63,8 @@ function validateLoginUser(obj) {
   });
   return schema.validate(obj);
 }
-// validation Update User
+
+// Validation for Update User
 function validateUpdateUser(obj) {
   const schema = Joi.object({
     email: Joi.string().trim().min(5).max(100).email(),

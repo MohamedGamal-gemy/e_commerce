@@ -7,10 +7,20 @@ const connectToDB = require("./config/db");
 const mongoose = require("mongoose");
 const app = express();
 app.use(express.json());
-
+//
+// app.use(cors());
+const cookieParser = require("cookie-parser");
+app.use(cookieParser());
+app.use(
+  cors({
+    origin: "http://localhost:5000",
+    credentials: true,
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
+  })
+); //
 connectToDB();
 
-app.use(cors());
 
 app.use(logger);
 
