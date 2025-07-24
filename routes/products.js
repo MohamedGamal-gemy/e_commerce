@@ -256,6 +256,12 @@ router.get(
       .lean();
 
     // ✅ Format products
+    const variantsColorsOfImages = products.map((product) =>
+      product.variants.map((v) => v.images[0])
+    );
+    // const imagesOfColors=variantsColorsOfImages.map(())
+    // console.log(variantsColorsOfImages);
+
     const formattedProducts = products.map((product) => ({
       _id: product._id,
       title: product.title,
@@ -265,7 +271,9 @@ router.get(
       subcategory: product.subcategory,
       category: product.category,
       firstImage: product.variants?.[0]?.images?.[0]?.url || null,
+      imagesOfColors: product.variants.map((variant) => variant.images[0]),
     }));
+    // console.log(formattedProducts);
 
     // ✅ Count and pages
     const totalCount = await Product.countDocuments(filter);

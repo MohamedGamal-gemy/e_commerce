@@ -29,10 +29,10 @@ const ProductVariantSchema = new mongoose.Schema(
           type: String,
           required: [true, "Size is required"],
         },
-        quantity: {
+        stock: {
           type: Number,
           default: 0,
-          min: [0, "Quantity can't be negative"],
+          min: [0, "Stock can't be negative"],
         },
       },
     ],

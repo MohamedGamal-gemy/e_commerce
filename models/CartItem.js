@@ -11,10 +11,10 @@ const cartItemSchema = new mongoose.Schema({
     type: String,
     required: true,
   },
-  quantity: {
+  stock: {
     type: Number,
     default: 1,
-    min: [1, "Quantity must be at least 1"],
+    min: [1, "stock must be at least 1"],
   },
 });
 

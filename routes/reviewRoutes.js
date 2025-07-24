@@ -13,10 +13,9 @@ router.post(
   "/",
   protect,
   asyncHandler(async (req, res) => {
-    const user = req.user._id; // من Middleware auth
+    const user = req.user._id;
     const { product, rating, comment } = req.body;
 
-    // ✅ تحقق من الحقول
     if (!product || !rating || !comment) {
       return res.status(400).json({ message: "All fields are required." });
     }
@@ -29,7 +28,6 @@ router.post(
       });
     }
 
-    // ✅ إنشاء الريفيو
     const review = new Review({
       product,
       user,

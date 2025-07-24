@@ -14,7 +14,7 @@
 //       },
 //       unit_amount: item.price * 100,
 //     },
-//     quantity: item.quantity,
+//     stock: item.stock,
 //   }));
 
 //   try {

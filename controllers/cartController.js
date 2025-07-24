@@ -4,9 +4,9 @@ const Cart = require("../models/CartItem");
 const { Product } = require("../models/productModel");
 
 const addToCart = asyncHandler(async (req, res) => {
-  const { userId, productId, variantId, size, quantity } = req.body;
+  const { userId, productId, variantId, size, stock } = req.body;
 
-  if (!userId || !productId || !variantId || !size || !quantity) {
+  if (!userId || !productId || !variantId || !size || !stock) {
     return res.status(400).json({ message: "Missing required fields" });
   }
 
@@ -27,9 +27,9 @@ const addToCart = asyncHandler(async (req, res) => {
     return res.status(400).json({ message: "Selected size not available" });
   }
 
-  if (sizeData.quantity < quantity) {
+  if (sizeData.stock < stock) {
     return res.status(400).json({
-      message: `Only ${sizeData.quantity} items available in stock for this size`,
+      message: `Only ${sizeData.stock} items available in stock for this size`,
     });
   }
 
@@ -47,19 +47,19 @@ const addToCart = asyncHandler(async (req, res) => {
   );
 
   if (existingItem) {
-    const totalRequested = existingItem.quantity + quantity;
+    const totalRequested = existingItem.stock + stock;
 
-    if (sizeData.quantity < totalRequested) {
+    if (sizeData.stock < totalRequested) {
       return res.status(400).json({
-        message: `You already have ${existingItem.quantity} in cart. Only ${
-          sizeData.quantity - existingItem.quantity
+        message: `You already have ${existingItem.stock} in cart. Only ${
+          sizeData.stock - existingItem.stock
         } more can be added.`,
       });
     }
 
-    existingItem.quantity = totalRequested;
+    existingItem.stock = totalRequested;
   } else {
-    cart.items.push({ productId, variantId, size, quantity });
+    cart.items.push({ productId, variantId, size, stock });
   }
 
   await cart.save();
@@ -112,7 +112,7 @@ const getCart = asyncHandler(async (req, res) => {
         item: {
           productId: "$items.productId",
           size: "$items.size",
-          quantity: "$items.quantity",
+          stock: "$items.stock",
           variant: {
             _id: "$filteredVariant._id",
             color: "$filteredVariant.color",
@@ -132,7 +132,7 @@ const getCart = asyncHandler(async (req, res) => {
           $push: {
             productId: "$item.productId",
             size: "$item.size",
-            quantity: "$item.quantity",
+            stock: "$item.stock",
             variant: "$item.variant",
             productTitle: "$productTitle",
             productPrice: "$productPrice",

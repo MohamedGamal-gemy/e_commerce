@@ -91,7 +91,7 @@ const router = express.Router();
 //           color: variant.color,
 //           image: variant.images[0]?.url || "",
 //           size: item.size,
-//           quantity: item.quantity,
+//           stock: item.stock,
 //           price: item.price || 0,
 //         };
 //       })
@@ -99,7 +99,7 @@ const router = express.Router();
 
 //     // 3. Calculate prices
 //     const itemsPrice = orderItems.reduce(
-//       (sum, item) => sum + item.price * item.quantity,
+//       (sum, item) => sum + item.price * item.stock,
 //       0
 //     );
 //     const shippingPrice = itemsPrice > 1000 ? 0 : 50;
@@ -206,7 +206,7 @@ router.post(
           color: variant.color,
           image: variant.images[0]?.url || "",
           size: item.size,
-          quantity: item.quantity,
+          stock: item.stock,
           price: item.price || 0,
         };
       })
@@ -214,7 +214,7 @@ router.post(
 
     // 3. Calculate prices
     const itemsPrice = orderItems.reduce(
-      (sum, item) => sum + item.price * item.quantity,
+      (sum, item) => sum + item.price * item.stock,
       0
     );
     const shippingPrice = itemsPrice > 1000 ? 0 : 50;

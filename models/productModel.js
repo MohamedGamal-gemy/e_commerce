@@ -81,10 +81,10 @@ const mongoose = require("mongoose");
 //               type: String,
 //               required: [true, "Size is required"],
 //             },
-//             quantity: {
+//             stock: {
 //               type: Number,
-//               required: [true, "Quantity is required"],
-//               min: [0, "Quantity can't be negative"],
+//               required: [true, "stock is required"],
+//               min: [0, "stock can't be negative"],
 //             },
 //           },
 //         ],
@@ -245,7 +245,7 @@ const Product = mongoose.model("Product", ProductSchema);
 //             .items(
 //               Joi.object({
 //                 size: Joi.string().required(),
-//                 quantity: Joi.number().min(0).required(),
+//                 stock: Joi.number().min(0).required(),
 //               })
 //             )
 //             .min(1)
@@ -276,7 +276,7 @@ const validateProduct = (data) => {
           .items(
             Joi.object({
               size: Joi.string().required(),
-              quantity: Joi.number().min(0).required(),
+              stock: Joi.number().min(0).required(),
             })
           )
           .required(),
@@ -329,7 +329,7 @@ function validateProductUpdate(obj) {
             .items(
               Joi.object({
                 size: Joi.string().optional(),
-                quantity: Joi.number().min(0).optional(),
+                stock: Joi.number().min(0).optional(),
                 _id: Joi.string().optional(),
               })
             )

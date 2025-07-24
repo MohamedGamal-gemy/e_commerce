@@ -24,7 +24,7 @@
 //     type: String,
 //     required: true,
 //   },
-//   quantity: {
+//   stock: {
 //     type: Number,
 //     required: true,
 //     min: 1,
@@ -104,7 +104,7 @@ const orderItemSchema = new mongoose.Schema({
   },
   image: String,
   size: String,
-  quantity: Number,
+  stock: Number,
   price: Number,
 });
 
