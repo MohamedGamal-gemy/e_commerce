@@ -1,159 +1,114 @@
 const express = require("express");
 const asyncHandler = require("express-async-handler");
 const cloudinary = require("../config/cloudinary");
-const upload = require("../middlewares/upload");
+const Subcategory = require("../models/subcategoryModel");
+const ProductVariant = require("../models/variantsModel");
+
 const {
   Product,
   validateProduct,
   validateProductUpdate,
 } = require("../models/productModel");
-const { default: mongoose } = require("mongoose");
+const { upload } = require("../middlewares/upload");
 const router = express.Router();
 
-// router.post(
-//   "/",
-//   upload.any(),
-//   asyncHandler(async (req, res) => {
-//     try {
-//       let parsedVariants = req.body.variants;
-//       if (typeof parsedVariants === "string") {
-//         try {
-//           parsedVariants = JSON.parse(parsedVariants);
-//         } catch (parseErr) {
-//           return res.status(400).json({ message: "Invalid JSON in variants" });
-//         }
-//       }
+router.post(
+  "/",
+  upload.any(), 
+  asyncHandler(async (req, res) => {
+    // Parse JSON body
+    let payload;
+    try {
+      payload = JSON.parse(req.body.payload);
+    } catch (err) {
+      return res.status(400).json({ message: "Invalid JSON payload" });
+    }
 
-//       req.body.variants = parsedVariants;
+    // Validate payload structure
+    const { error, value } = validateProduct(payload);
+    if (error) {
+      return res.status(400).json({ message: error.details[0].message });
+    }
 
-//       const { error } = validateProduct(req.body);
-//       if (error) {
-//         console.log("Joi validation error:", error.details);
-//         return res.status(400).json({ message: error.details[0].message });
-//       }
+    const { title, description, price, category, subcategory, variants } =
+      value;
+    const files = req.files;
 
-//       const { title, description, price, category, subcategory } = req.body;
-//       const files = req.files || [];
+    // Map images to variants
+    const variantImagesMap = variants.reduce((acc, v, i) => {
+      acc[i] = [];
+      return acc;
+    }, {});
 
-//       const variantImagesMap = {};
-//       files.forEach((file) => {
-//         const fieldName = file.fieldname;
-//         const match = fieldName.match(/variantImages\[(\d+)\]/);
-//         if (match) {
-//           const variantIndex = parseInt(match[1], 10);
-//           if (!variantImagesMap[variantIndex]) {
-//             variantImagesMap[variantIndex] = [];
-//           }
-//           variantImagesMap[variantIndex].push(file);
-//         }
-//       });
+    Object.values(files)
+      .flat()
+      .forEach((file) => {
+        // file.fieldname => 'variantImages[0]'
+        const match = file.fieldname.match(/^variantImages\[(\d+)\]$/);
+        if (match) {
+          const idx = parseInt(match[1], 10);
+          variantImagesMap[idx].push({
+            url: file.path,
+            publicId: file.filename,
+          });
+        }
+      });
 
-//       for (let i = 0; i < parsedVariants.length; i++) {
-//         if (!variantImagesMap[i] || variantImagesMap[i].length === 0) {
-//           throw new Error(`At least one image is required for variant ${i}`);
-//         }
-//       }
+    // Create and save product
+    const product = await Product.create({
+      title,
+      description,
+      price,
+      category,
+      subcategory,
+    });
 
-//       const updatedVariants = await Promise.all(
-//         parsedVariants.map(async (variant, index) => {
-//           const variantImages = variantImagesMap[index] || [];
+    // Create variants
+    const variantDocs = await Promise.all(
+      variants.map(async (variant, idx) => {
+        const images = variantImagesMap[idx];
+        if (!images || images.length === 0) {
+          throw new Error(`Missing images for variant ${idx}`);
+        }
+        const variantDoc = await ProductVariant.create({
+          productId: product._id,
+          color: variant.color,
+          sizes: variant.sizes,
+          images,
+        });
+        return variantDoc._id;
+      })
+    );
 
-//           const images = await Promise.all(
-//             variantImages.map(async (file) => {
-//               const result = await new Promise((resolve, reject) => {
-//                 const stream = cloudinary.uploader.upload_stream(
-//                   {
-//                     folder: `products/variants/${variant.color.name}`,
-//                   },
-//                   (error, result) => {
-//                     if (error) return reject(error);
-//                     resolve(result);
-//                   }
-//                 );
-//                 stream.end(file.buffer);
-//               });
+    // Link variants to product
+    product.variants = variantDocs;
+    await product.save();
 
-//               return {
-//                 url: result.secure_url,
-//                 publicId: result.public_id,
-//               };
-//             })
-//           );
+    res.status(201).json({ message: "Product created", product });
+  })
+);
 
-//           return {
-//             ...variant,
-//             images: images.length > 0 ? images : [],
-//           };
-//         })
-//       );
+// GET /api/products - جلب كل المنتجات
+router.get("/", async (req, res) => {
+  try {
+    const products = await Product.find()
+      .populate("category", "name") // جلب اسم الفئة
+      .populate("subcategory", "name") // جلب اسم الفئة الفرعية (لو موجود)
+      .populate({
+        path: "variants",
+        select: "color sizes images", // جلب بيانات الـ variants
+      });
 
-//       const product = new Product({
-//         title,
-//         description,
-//         price,
-//         category,
-//         subcategory,
-//         variants: updatedVariants,
-//       });
+    res
+      .status(200)
+      .json({ message: "Products retrieved successfully", products });
+  } catch (error) {
+    console.error("Error fetching products:", error);
+    res.status(500).json({ error: "Server error" });
+  }
 
-//       await product.save();
-//       res.status(201).json({
-//         message: "Product created successfully",
-//         product,
-//       });
-//     } catch (error) {
-//       console.error("Backend error:", error);
-//       res
-//         .status(500)
-//         .json({ message: `Failed to add product: ${error.message}` });
-//     }
-//   })
-// );
-
-// router.get(
-//   "/",
-//   asyncHandler(async (req, res) => {
-//     const { limit = 8, page = 1 } = req.query;
-//     const currentPage = Number(page) || 1;
-//     const pageSize = Number(limit) || 8;
-//     const skip = (currentPage - 1) * pageSize;
-//     const totalCount = await Product.countDocuments();
-
-//     const products = await Product.find()
-//       .skip(skip)
-//       .limit(pageSize)
-//       .populate({
-//         path: "variants",
-//         populate: {
-//           path: "images",
-//           select: "url", // فقط نجيب url
-//         },
-//       })
-//       .populate("category")
-//       .populate("subcategory");
-
-//     // const variants = products?.map((product) => {
-//     //   product.variants;
-//     // });
-//     // const imgShow = variants[0]?.images[0].url;
-//     // const newProducts = {
-//     //   imgShow,
-//     //   products,
-//     // };
-//     res.json({
-//       products,
-//       // imgShow,
-//       totalPages: Math.ceil(totalCount / pageSize),
-//       currentPage,
-//     });
-
-//     // .populate("subcategory");
-//   })
-// );
-
-const Subcategory = require("../models/subcategoryModel");
-const ProductVariant = require("../models/variantsModel");
-
+  // show
+});
 router.get(
   "/show",
   asyncHandler(async (req, res) => {
@@ -300,39 +255,6 @@ router.get(
   })
 );
 
-router.get(
-  "/every",
-  asyncHandler(async (req, res) => {
-    const products = await Product.find();
-    return res.json(products);
-  })
-);
-// router.patch(
-//   "/:id",
-//   asyncHandler(async (req, res) => {
-//     const { id } = req.params;
-
-//     const product = await Product.findById(id);
-
-//     if (!product) {
-//       return res.status(404).json({ message: "Product not found" });
-//     }
-
-//     // تحديث الحقول الأساسية (title, price, description, category...)
-//     product.title = req.body.title || product.title;
-//     product.price = req.body.price || product.price;
-//     product.description = req.body.description || product.description;
-//     product.category = req.body.category || product.category;
-//     product.subcategory = req.body.subcategory || product.subcategory;
-
-//     // لو عندك تحديث لمتغيرات (variants) أو صور، ممكن تضيفها هنا برضو
-
-//     const updatedProduct = await product.save();
-
-//     res.status(200).json(updatedProduct);
-//   })
-// );
-
 router.patch(
   "/:id",
   asyncHandler(async (req, res) => {
@@ -374,123 +296,7 @@ router.patch(
     res.status(200).json(updatedProduct);
   })
 );
-
-// router.get(
-//   "/admin/:id",
-//   asyncHandler(async (req, res) => {
-//     const product = await Product.findById(req.params.id).populate(
-//       "category subcategory "
-//     );
-
-//     if (!product) {
-//       return res.status(404).json({ message: "Product not found" });
-//     }
-
-//     res.json(product);
-//   })
-// );
-
-// router.get(
-//   "/",
-//   asyncHandler(async (req, res) => {
-//     const {
-//       category,
-//       subcategory,
-//       color,
-//       minPrice,
-//       maxPrice,
-//       sort,
-//       title,
-//       rating,
-//       page = 1,
-//       limit = 8,
-//     } = req.query;
-
-//     const filter = {};
-
-//     if (category) filter.category = category;
-
-//     if (subcategory) {
-//       filter.subcategory = { $in: subcategory.split(",") };
-//     }
-
-//     if (color) {
-//       filter["variants"] = {
-//         $elemMatch: {
-//           "color.name": { $in: color.split(",") },
-//         },
-//       };
-//     }
-
-//     if (minPrice || maxPrice) {
-//       filter.price = {};
-//       if (minPrice) filter.price.$gte = Number(minPrice);
-//       if (maxPrice) filter.price.$lte = Number(maxPrice);
-//     }
-
-//     if (title) {
-//       filter.title = { $regex: title, $options: "i" };
-//     }
-
-//     if (rating) {
-//       filter.rating = { $gte: Number(rating) };
-//     }
-
-//     let sortQuery = {};
-//     switch (sort) {
-//       case "high":
-//         sortQuery = { price: -1 };
-//         break;
-//       case "low":
-//         sortQuery = { price: 1 };
-//         break;
-//       case "high_rating":
-//         sortQuery = { rating: -1 };
-//         break;
-//       case "new":
-//         sortQuery = { createdAt: -1 };
-//         break;
-//       case "old":
-//         sortQuery = { createdAt: 1 };
-//         break;
-//       default:
-//         sortQuery = {};
-//     }
-
-//     const currentPage = Number(page) || 1;
-//     const pageSize = Number(limit) || 8;
-//     const skip = (currentPage - 1) * pageSize;
-
-//     const totalItems = await Product.countDocuments(filter);
-
-//     const products = await Product.find({ filter })
-//       .sort(sortQuery)
-//       .skip(skip)
-//       .limit(pageSize)
-//       .select("-__v");
-
-//     const updatedProducts = products.map((product) => {
-//       const productObj = product.toObject();
-//       productObj.variants = productObj.variants.map((variant) => ({
-//         ...variant,
-//         images: variant.images.slice(0, 2),
-//       }));
-//       return productObj;
-//     });
-
-//     if (!products || products.length === 0) {
-//       return res.status(404).json({ message: "No products found" });
-//     }
-
-//     res.status(200).json({
-//       products: updatedProducts,
-//       currentPage,
-//       totalPages: Math.ceil(totalItems / pageSize),
-//       totalItems,
-//     });
-//   })
-// );
-
+// single
 router.get(
   "/:id",
   asyncHandler(async (req, res) => {
