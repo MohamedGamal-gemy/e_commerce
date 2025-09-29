@@ -43,6 +43,12 @@ const ProductSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
+ProductSchema.index({ title: "text" }); // بحث نصى فى العنوان
+ProductSchema.index({ price: 1 }); // للفلترة بالـ price (min/max)
+ProductSchema.index({ subcategory: 1 }); // علشان البحث بالفئة الفرعية
+ProductSchema.index({ category: 1 }); // علشان البحث بالفئة الرئيسية
+ProductSchema.index({ createdAt: -1 }); // للفرز حسب الأحدث
+ProductSchema.index({ rating: -1 }); // للفرز حسب التقييم
 
 const Product = mongoose.model("Product", ProductSchema);
 //
@@ -61,9 +67,6 @@ const variantSchema = Joi.object({
       })
     )
     .min(1)
-    .required(),
-  imageField: Joi.string()
-    .pattern(/^variantImages\[\d+\]$/)
     .required(),
 });
 const validateProduct = (data) => {
@@ -87,45 +90,53 @@ function validateProductUpdate(obj) {
     title: Joi.string().trim().min(2).optional(),
     description: Joi.string().trim().optional(),
     price: Joi.number().min(0.01).optional(),
-    category: Joi.string().valid("men", "kids", "women").optional(),
-    subcategory: Joi.string().valid("Shirts", "T-shirts", "Jacket").optional(),
+    category: Joi.string()
+      .regex(/^[0-9a-fA-F]{24}$/)
+      .optional(),
+    subcategory: Joi.string()
+      .regex(/^[0-9a-fA-F]{24}$/)
+      .optional(),
     variants: Joi.array()
       .items(
         Joi.object({
-          _id: Joi.string().optional(),
+          _id: Joi.string()
+            .regex(/^[0-9a-fA-F]{24}$/)
+            .optional()
+            .allow(null, "undefined"),
           color: Joi.object({
-            name: Joi.string().optional(),
-            value: Joi.string().optional(),
+            name: Joi.string().min(1).optional(),
+            value: Joi.string()
+              .pattern(/^#([0-9A-F]{3}){1,2}$/i)
+              .optional(),
           }).optional(),
+          // Allow any array for images, even if empty or null
           images: Joi.array()
             .items(
               Joi.object({
                 url: Joi.string().optional(),
                 publicId: Joi.string().optional(),
                 _id: Joi.string().optional(),
-              })
+              }).optional()
             )
-            .optional(),
+            .optional()
+            .allow(null),
           sizes: Joi.array()
             .items(
               Joi.object({
-                size: Joi.string().optional(),
+                size: Joi.string().min(1).optional(),
                 stock: Joi.number().min(0).optional(),
                 _id: Joi.string().optional(),
-              })
+              }).optional()
             )
-            .optional(),
-        })
+            .optional()
+            .allow(null),
+        }).optional()
       )
-
-      .optional(),
+      .optional()
+      .allow(null),
   });
 
   return schema.validate(obj);
 }
-// ProductSchema.index({ category: 1, subcategory: 1 });
-// ProductSchema.index({ price: 1 });
-// ProductSchema.index({ rating: -1 });
-// ProductSchema.index({ title: "text" });
 
 module.exports = { Product, validateProduct, validateProductUpdate };

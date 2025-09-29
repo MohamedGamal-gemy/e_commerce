@@ -2,11 +2,27 @@ const express = require("express");
 const router = express.Router();
 const asyncHandler = require("express-async-handler");
 const Category = require("../models/categoryModel");
+const redis = require("../config/redis");
 
+// ✅ Get Categories with Redis cache
 router.get(
   "/",
   asyncHandler(async (req, res) => {
+    const cacheKey = "categories:all";
+
+    // 1️⃣ جرب تجيب من الكاش
+    const cached = await redis.get(cacheKey);
+    if (cached) {
+      console.log("🚀 From Redis (Categories)");
+      return res.json(JSON.parse(cached));
+    }
+
+    // 2️⃣ لو مش موجود في الكاش -> هات من DB
     const categories = await Category.find();
+
+    // 3️⃣ خزّن في Redis لمدة 10 دقايق
+    await redis.set(cacheKey, JSON.stringify(categories), "EX", 600);
+
     res.json(categories);
   })
 );

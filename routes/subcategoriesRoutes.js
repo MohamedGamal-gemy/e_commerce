@@ -1,11 +1,24 @@
 const Subcategory = require("../models/subcategoryModel");
 const express = require("express");
 const asyncHandler = require("express-async-handler");
+const redis = require("../config/redis");
 const router = express.Router();
+// ✅ Get Subcategories with Redis cache
 router.get(
   "/",
   asyncHandler(async (req, res) => {
+    const cacheKey = "subcategories:all";
+
+    const cached = await redis.get(cacheKey);
+    if (cached) {
+      console.log("🚀 From Redis (Subcategories)");
+      return res.json(JSON.parse(cached));
+    }
+
     const subcategories = await Subcategory.find();
+
+    await redis.set(cacheKey, JSON.stringify(subcategories), "EX", 600);
+
     res.json(subcategories);
   })
 );

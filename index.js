@@ -1,4 +1,3 @@
-
 const express = require("express");
 require("dotenv").config();
 const cors = require("cors");
@@ -41,9 +40,11 @@ app.use(
 // ✅ CORS
 app.use(
   cors({
-    origin: "http://localhost:5000",
+    // origin: "http://localhost:5000",
+    origin: "*",
+
     credentials: true,
-    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],
   })
 );
@@ -54,7 +55,7 @@ const apiLimiter = rateLimit({
   max: 100,
   message: { message: "Too many requests, try again later." },
 });
-app.use("/api", apiLimiter);
+// app.use("/api", apiLimiter);
 
 const loginLimiter = rateLimit({
   windowMs: 10 * 60 * 1000, // 10 دقائق
