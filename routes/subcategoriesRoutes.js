@@ -7,21 +7,35 @@ const router = express.Router();
 router.get(
   "/",
   asyncHandler(async (req, res) => {
-    const cacheKey = "subcategories:all";
-
-    const cached = await redis.get(cacheKey);
-    if (cached) {
-      console.log("🚀 From Redis (Subcategories)");
-      return res.json(JSON.parse(cached));
-    }
-
-    const subcategories = await Subcategory.find();
-
-    await redis.set(cacheKey, JSON.stringify(subcategories), "EX", 600);
-
+    // const subcategories = await Subcategory.aggregate([
+    //   {
+    //     $project: {
+    //       name: 1,
+    //     },
+    //   },
+    // ]);
+    const subcategories = await Subcategory.find().select("-__v");
     res.json(subcategories);
   })
 );
+// router.get(
+//   "/",
+//   asyncHandler(async (req, res) => {
+//     const cacheKey = "subcategories:all";
+
+//     const cached = await redis.get(cacheKey);
+//     if (cached) {
+//       console.log("🚀 From Redis (Subcategories)");
+//       return res.json(JSON.parse(cached));
+//     }
+
+//     const subcategories = await Subcategory.find();
+
+//     await redis.set(cacheKey, JSON.stringify(subcategories), "EX", 600);
+
+//     res.json(subcategories);
+//   })
+// );
 router.post(
   "/",
   asyncHandler(async (req, res) => {

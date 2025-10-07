@@ -64,55 +64,40 @@ router.get(
 router.get(
   "/colors",
   asyncHandler(async (req, res) => {
-    const cacheKey = "variants:colors";
-    const cached = await redis.get(cacheKey);
-    if (cached) {
-      console.log(`🚀 From Redis (unique colors with count for ${cacheKey})`);
-      return res.json(JSON.parse(cached));
-    }
-
-    const colors = await ProductVariant.aggregate([
+    const uniqueColors = await ProductVariant.aggregate([
       {
-        $match: {
-          "color.name": { $exists: true, $ne: "" },
-        },
-      },
-      {
-        $lookup: {
-          from: "products",
-          localField: "productId",
-          foreignField: "_id",
-          as: "product",
-        },
-      },
-      { $unwind: "$product" },
-      {
-        $group: {
-          _id: { name: { $toLower: "$color.name" } }, // اعتمد فقط على name
-          name: { $first: "$color.name" },
-          productIds: { $addToSet: "$product._id" }, // المنتجات الفريدة
-        },
-      },
-      {
-        $addFields: {
-          count: { $size: "$productIds" },
-        },
-      },
-      {
+        // 1. تحويل اسم اللون إلى حروف صغيرة وتمرير قيمة اللون
         $project: {
           _id: 0,
-          name: 1,
-          count: 1,
+          // 🔥 توحيد الاسم باستخدام $toLower
+          colorNameLower: { $toLower: "$color.name" },
+          colorValue: "$color.value",
         },
       },
-      { $sort: { name: 1 } },
+      {
+        // 2. تجميع المستندات (Grouping) بناءً على اسم اللون الموحد
+        $group: {
+          // 🔥 حقل التجميع (يجب أن يكون اللون الموحد هو الـ ID)
+          _id: "$colorNameLower",
+          // جلب أول قيمة (Value) للون المطابق للحقل المُجمع
+          colorValue: { $first: "$colorValue" },
+        },
+      },
+      {
+        // 3. إعادة تنسيق الإخراج النهائي
+        $project: {
+          _id: 0,
+          colorName: "$_id", // إعادة تسمية الـ ID المجمّع
+          colorValue: 1,
+        },
+      },
+      {
+        // 4. (اختياري) ترتيب الألوان أبجدياً
+        $sort: { colorName: 1 },
+      },
     ]);
 
-    console.log("🎨 Colors aggregation result:", colors);
-
-    await redis.set(cacheKey, JSON.stringify(colors), "EX", 600);
-
-    res.json(colors);
+    res.json(uniqueColors);
   })
 );
 

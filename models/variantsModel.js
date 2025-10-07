@@ -1,5 +1,6 @@
 const mongoose = require("mongoose");
 
+
 const ProductVariantSchema = new mongoose.Schema(
   {
     productId: {
@@ -7,14 +8,16 @@ const ProductVariantSchema = new mongoose.Schema(
       ref: "Product",
       required: true,
     },
+    sku: {
+      type: String,
+      required: [true, "SKU is required"],
+      unique: true, // يضمن عدم تكرار كود المنتج الفريد
+    },
     color: {
-      name: {
-        type: String,
-        required: [true, "Color name is required"],
-      },
+      name: { type: String, required: [true, "Color name is required"] },
       value: {
         type: String,
-        required: [true, "Color value is required"],
+        required: [true, "Color value (HEX) is required"],
       },
     },
     images: [
@@ -23,22 +26,24 @@ const ProductVariantSchema = new mongoose.Schema(
         publicId: { type: String },
       },
     ],
+    // 🔥 إدارة المخزون على مستوى المقاس
     sizes: [
       {
-        size: {
-          type: String,
-          required: [true, "Size is required"],
-        },
+        size: { type: String, required: [true, "Size is required"] },
         stock: {
           type: Number,
           default: 0,
           min: [0, "Stock can't be negative"],
         },
+        // يمكن إضافة سعر مختلف للمقاسات الكبيرة هنا اختيارياً
+        // customPrice: { type: Number, default: 0 }
       },
     ],
   },
   { timestamps: true }
 );
+
+// يجب إضافة middleware هنا لتحديث totalStock و isAvailable في ProductSchema بعد الحفظ
 
 const ProductVariant = mongoose.model("ProductVariant", ProductVariantSchema);
 module.exports = ProductVariant;
