@@ -452,6 +452,19 @@ router.get(
       }
     })();
 
+    // 🔥 بناء كائن فلترة الأسعار بشكل صحيح
+    const priceMatch = {};
+
+    if (minPrice) {
+      priceMatch.$gte = parseFloat(minPrice);
+    }
+
+    if (maxPrice) {
+      priceMatch.$lte = parseFloat(maxPrice);
+    }
+
+    const hasPriceFilter = Object.keys(priceMatch).length > 0;
+
     const pipeline = [
       ...(hasColorFilter
         ? [
@@ -483,12 +496,12 @@ router.get(
           ]
         : []),
 
-      ...(minPrice || maxPrice
+      // 🟢 مرحلة فلترة الأسعار المُعدلة بالكامل
+      ...(hasPriceFilter
         ? [
             {
               $match: {
-                ...(minPrice && { price: { $gte: parseFloat(minPrice) } }),
-                ...(maxPrice && { price: { $lte: parseFloat(maxPrice) } }),
+                price: priceMatch,
               },
             },
           ]
@@ -505,6 +518,8 @@ router.get(
       },
       { $unwind: "$subcategory" },
       ...subcategoryNameMatchStage,
+
+      // ... (باقي البايبلاين)
 
       // 🟢 ربط الـ variants
       {
@@ -597,7 +612,6 @@ router.get(
     });
   })
 );
-
 // #######################################################
 
 router.get(
