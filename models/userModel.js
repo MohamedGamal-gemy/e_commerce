@@ -41,6 +41,7 @@ UserSchema.methods.generateToken = function () {
       id: this._id,
       isAdmin: this.isAdmin,
       username: this.username,
+      email: this.email,
     },
     process.env.JWT_SECRET_KEY,
     { expiresIn: "1d" } // Token expires in 1 day

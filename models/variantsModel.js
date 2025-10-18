@@ -10,8 +10,8 @@ const ProductVariantSchema = new mongoose.Schema(
     },
     sku: {
       type: String,
-      required: [true, "SKU is required"],
-      unique: true, // يضمن عدم تكرار كود المنتج الفريد
+      // required: [true, "SKU is required"],
+      // unique: true, // يضمن عدم تكرار كود المنتج الفريد
     },
     color: {
       name: { type: String, required: [true, "Color name is required"] },

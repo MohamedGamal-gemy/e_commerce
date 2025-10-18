@@ -1,198 +1,230 @@
 const express = require("express");
 const asyncHandler = require("express-async-handler");
 const Cart = require("../models/CartItem");
-const { Product } = require("../models/productModel");
+const Product = require("../models/productModel");
 const ProductVariant = require("../models/variantsModel");
+const { addToCartSchema, getCartSchema } = require("../validations/cartValidation");
 
 const router = express.Router();
 
-// 🧱 GET /cart
-
+// ==========================
+// 🧾 GET CART
+// ==========================
 router.get(
   "/",
   asyncHandler(async (req, res) => {
-    const { userId, sessionId } = req.query;
+    const { error, value } = getCartSchema.validate(req.query);
+    if (error) {
+      return res.status(400).json({ message: error.details[0].message });
+    }
 
-    if (!userId && !sessionId)
-      return res.status(400).json({ message: "userId or sessionId required" });
+    const { userId, sessionId } = value;
+    const findCriteria = userId ? { userId } : { sessionId };
 
-    const cart = await Cart.findOne({
-      $or: [{ userId }, { sessionId }],
-    })
+    const cart = await Cart.findOne(findCriteria)
       .populate({
         path: "items.productId",
         select: "title price slug",
       })
       .populate({
         path: "items.variantId",
-        select: "color images ",
+        select: "color images",
         transform: (doc) => {
           if (!doc) return doc;
-          doc.images = doc.images?.length ? [doc.images[0]] : [];
-          return doc;
+          return {
+            ...doc.toObject(),
+            images: doc.images?.length ? [doc.images[0]] : [],
+          };
         },
       });
 
-    res.json(cart || { items: [] });
+    res.status(200).json({
+      message: "Cart fetched successfully",
+      cart: cart || { items: [], subtotal: 0, totalItems: 0 },
+    });
   })
 );
-//
-// POST /api/cart
-// @desc    إضافة منتج جديد لسلة التسوق أو زيادة كميته
+
+// ==========================
+// ➕ ADD TO CART
+// ==========================
 router.post(
-  "/",
+  "/add",
   asyncHandler(async (req, res) => {
-    const { userId, sessionId } = req.query; // لتحديد السلة
-    const { productId, variantId, size, quantity } = req.body; // بيانات المنتج المراد إضافته
-
-    // 1. التحقق من وجود userId أو sessionId
-    if (!userId && !sessionId) {
-      return res.status(400).json({ message: "userId or sessionId required" });
+    const { error, value } = addToCartSchema.validate(req.body);
+    if (error) {
+      return res.status(400).json({ message: error.details[0].message });
     }
 
-    // 2. جلب تفاصيل المنتج (السعر الأصلي، السعر الحالي، حالة التوفر)
-    // تحتاج لاستيراد موديل Product هنا
-    const product = await Product.findById(productId).select("price");
+    const { productId, variantId, size, quantity, sessionId } = value;
+    const userId = req.user ? req.user.id : null;
 
-    // if (!product || !product.isAvailable) {
-    if (!product ) {
-      return res
-        .status(404)
-        .json({ message: "Product not found or currently unavailable." });
-    }
-
-    // 3. البحث عن السلة الحالية
-    let cart = await Cart.findOne({ $or: [{ userId }, { sessionId }] });
-
-    // 4. إذا لم توجد سلة، قم بإنشاء واحدة جديدة
-    if (!cart) {
-      cart = new Cart({
-        userId: userId || null,
-        sessionId: sessionId || null,
-        items: [],
+    if (!sessionId && !userId) {
+      return res.status(400).json({
+        message: "Authentication required: userId or sessionId must exist.",
       });
     }
 
-    // 5. التحقق مما إذا كان المنتج (بكل تفاصيله) موجوداً بالفعل في السلة
-    const existingItemIndex = cart.items.findIndex(
+    const [product, variant] = await Promise.all([
+      Product.findById(productId).select("price"),
+      ProductVariant.findById(variantId).select("sizes"),
+    ]);
+
+    if (!product || !variant) {
+      return res.status(404).json({ message: "Product or Variant not found." });
+    }
+
+    const sizeInfo = variant.sizes.find((s) => s.size === size);
+    if (!sizeInfo) {
+      return res
+        .status(400)
+        .json({ message: `Size ${size} is not available for this variant.` });
+    }
+
+    const isAvailable = sizeInfo.stock > 0;
+    const cartKey = userId ? { userId } : { sessionId };
+
+    let cart = await Cart.findOneAndUpdate(
+      cartKey,
+      { $setOnInsert: { ...cartKey, sessionId, items: [] } },
+      { new: true, upsert: true }
+    );
+
+    const existingIndex = cart.items.findIndex(
       (item) =>
         item.productId.toString() === productId &&
         item.variantId.toString() === variantId &&
         item.size === size
     );
 
-    if (existingItemIndex > -1) {
-      // المنتج موجود: قم بزيادة الكمية
-      cart.items[existingItemIndex].quantity += quantity;
+    if (existingIndex > -1) {
+      cart.items[existingIndex].quantity += quantity;
     } else {
-      // المنتج غير موجود: قم بإضافته كعنصر جديد
       cart.items.push({
         productId,
         variantId,
         size,
         quantity,
-        // 🔥 المنطق الحاسم: تخزين السعر هنا
         price: product.price,
-        originalPrice: product.originalPrice,
+        isAvailable,
       });
     }
 
-    // 6. حفظ السلة (سيتم تشغيل الـ pre('save') middleware لحساب subtotal و totalItems)
     await cart.save();
 
-    // 7. جلب السلة بالـ population الكامل للرد على المستخدم
-    const populatedCart = await Cart.findById(cart._id)
-      .populate({ path: "items.productId", select: "title slug" })
-      .populate({
-        path: "items.variantId",
-        select: "color images ",
-        transform: (doc) => {
-          /* منطق جلب صورة واحدة */ return doc;
-        },
-      });
-
-    res.status(200).json(populatedCart);
+    res.status(201).json({
+      message: "Product added to cart successfully.",
+      cart,
+    });
   })
 );
-//
-// ➕ POST /cart/add — إضافة منتج للكارت
-//
-router.post(
-  "/add",
+
+/**
+ * @desc    Delete a specific item from the cart or delete the entire cart
+ * @route   DELETE /api/v1/cart
+ * @access  Public (uses sessionId) or Private (uses userId)
+ * * @body    { variantId, size } : لحذف عنصر محدد
+ * @body    { deleteAll: true } : لحذف السلة بالكامل
+ */
+router.delete(
+  "/",
   asyncHandler(async (req, res) => {
-    const {
-      userId,
-      sessionId,
-      productId,
-      variantId,
-      size,
-      quantity = 1,
-    } = req.body;
+    const { variantId, size, deleteAll, sessionId } = req.body;
+    const userId = req.user ? req.user.id : null; // 1. تحديد مفتاح السلة (Find Cart Key)
 
-    if (!userId && !sessionId)
-      return res.status(400).json({ message: "userId or sessionId required" });
+    const cartKey = userId ? { userId } : { sessionId }; // يجب التحقق من وجود مفتاح البحث
+    if (Object.keys(cartKey).length === 0) {
+      res.status(400);
+      throw new Error("Authentication (userId) or sessionId required.");
+    } // 2. البحث عن السلة
 
-    if (!productId || !variantId || !size)
-      return res.status(400).json({ message: "Missing required fields" });
-
-    console.log(req.body);
-    // ✅ تحقق من المنتج
-    const product = await Product.findById(productId);
-    if (!product) return res.status(404).json({ message: "Product not found" });
-
-    // ✅ تحقق من الـ variant
-    const variant = await ProductVariant.findById(variantId);
-    if (!variant) return res.status(404).json({ message: "Variant not found" });
-
-    // ✅ تحقق من المخزون
-    const sizeData = variant.sizes.find((s) => s.size === size);
-    if (!sizeData)
-      return res.status(400).json({ message: `Size ${size} not found` });
-
-    if (sizeData.stock < quantity)
-      return res
-        .status(400)
-        .json({ message: "Not enough stock for this size" });
-
-    // ✅ ابحث عن الكارت (بناءً على userId أو sessionId)
-    let cart = await Cart.findOne({
-      $or: [{ userId }, { sessionId }],
-    });
+    const cart = await Cart.findOne(cartKey);
 
     if (!cart) {
-      cart = new Cart({ userId, sessionId, items: [] });
-    }
+      return res.status(404).json({ message: "Cart not found." });
+    } // ------------------------------------ // A. حالة حذف السلة بالكامل (Delete All) // ------------------------------------
 
-    // ✅ تحقق لو المنتج بنفس الـ variant والمقاس موجود بالفعل
-    const existingItem = cart.items.find(
-      (item) =>
-        item.productId.toString() === productId &&
-        item.variantId.toString() === variantId &&
-        item.size === size
-    );
+    if (deleteAll) {
+      await Cart.deleteOne(cartKey);
 
-    if (existingItem) {
-      existingItem.quantity += quantity;
-    } else {
-      cart.items.push({ productId, variantId, size, quantity });
-    }
+      return res.status(200).json({
+        message: "Cart successfully deleted.",
+        deleted: true,
+      });
+    } // ------------------------------------ // B. حالة حذف عنصر محدد (Delete Item) // ------------------------------------ // التحقق من المتطلبات
+
+    if (!variantId || !size) {
+      res.status(400);
+      throw new Error(
+        "variantId and size are required to delete a specific item."
+      );
+    } // إزالة العنصر من مصفوفة items
+
+    const initialLength = cart.items.length;
+    cart.items = cart.items.filter(
+      (item) => !(item.variantId.toString() === variantId && item.size === size)
+    ); // التحقق إذا تم حذف أي عنصر
+
+    if (cart.items.length === initialLength) {
+      return res.status(404).json({ message: "Item not found in cart." });
+    } // 3. حفظ السلة بعد الحذف // (يجب أن يتم تفعيل pre('save') middleware لحساب subtotal و totalItems قبل الحفظ)
 
     await cart.save();
 
-    // Populate قبل الإرجاع
-    const populatedCart = await Cart.findById(cart._id)
-      .populate({
-        path: "items.productId",
-        select: "title price slug",
-      })
-      .populate({
-        path: "items.variantId",
-        select: "color images sizes",
-      });
-
-    res.status(201).json(populatedCart);
+    res.status(200).json({
+      message: "Item removed from cart successfully.",
+      cart,
+    });
   })
 );
-module.exports = router;
 
-// export default router;
+//
+
+router.put(
+  "/",
+  asyncHandler(async (req, res) => {
+    const { variantId, size, quantity, sessionId } = req.body;
+    const userId = req.user ? req.user.id : null;
+
+    // 1️⃣ تحديد مفتاح السلة (User أو Session)
+    const cartKey = userId ? { userId } : { sessionId };
+    if (Object.keys(cartKey).length === 0) {
+      res.status(400);
+      throw new Error("Authentication (userId) or sessionId required.");
+    }
+
+    // 2️⃣ البحث عن السلة
+    const cart = await Cart.findOne(cartKey);
+    if (!cart) {
+      return res.status(404).json({ message: "Cart not found." });
+    }
+
+    // 3️⃣ البحث عن العنصر داخل السلة
+    const itemIndex = cart.items.findIndex(
+      (item) => item.variantId.toString() === variantId && item.size === size
+    );
+
+    if (itemIndex === -1) {
+      return res.status(404).json({ message: "Item not found in cart." });
+    }
+
+    // 4️⃣ التحقق من القيمة الجديدة للكمية
+    if (quantity <= 0) {
+      // حذف العنصر بدل الكمية 0
+      cart.items.splice(itemIndex, 1);
+    } else {
+      // تحديث الكمية
+      cart.items[itemIndex].quantity = quantity;
+    }
+
+    // 5️⃣ حفظ السلة بعد التعديل
+    await cart.save();
+
+    res.status(200).json({
+      message: "Cart updated successfully.",
+      cart,
+    });
+  })
+);
+
+module.exports = router;

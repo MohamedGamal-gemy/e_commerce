@@ -179,8 +179,8 @@ const ProductSchema = new mongoose.Schema(
     },
     slug: {
       type: String,
-      required: [true, "Slug is required"],
-      unique: true,
+      // required: [true, "Slug is required"],
+      // unique: true,
       trim: true,
     },
     description: {
@@ -191,7 +191,7 @@ const ProductSchema = new mongoose.Schema(
     // 🔥 سعر البيع الأصلي (قبل أي خصم)
     originalPrice: {
       type: Number,
-      required: [true, "Original Price is required"],
+      // required: [true, "Original Price is required"],
       min: [0.01, "Original Price must be greater than 0"],
     },
     // 💡 سعر البيع الحالي (السعر الذي سيتم عرضه للشراء بعد الخصم)

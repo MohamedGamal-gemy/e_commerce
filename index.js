@@ -19,36 +19,35 @@ connectToDB();
 // ✅ Middlewares
 app.use(express.json());
 app.use(cookieParser());
+
+app.use(
+  cors({
+    origin: "http://localhost:5000", 
+    credentials: true,
+    methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+    // allowedHeaders: ["Content-Type", "Authorization"],
+  })
+);
+
+// ✅ بعد كده الميدل وير الباقيين
 app.use(morgan("dev"));
 app.use(xss());
 app.use(hpp());
 
-// ✅ Helmet (with CSP)
-app.use(
-  helmet({
-    contentSecurityPolicy: {
-      directives: {
-        defaultSrc: ["'self'"],
-        scriptSrc: ["'self'", "'unsafe-inline'", "https://trusted-cdn.com"],
-        styleSrc: ["'self'", "'unsafe-inline'"],
-        imgSrc: ["'self'", "data:", "https://res.cloudinary.com"],
-      },
-    },
-  })
-);
-
-// ✅ CORS
-app.use(
-  cors({
-    // origin: "http://localhost:5000",
-    origin: "*",
-
-    credentials: true,
-    methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization"],
-  })
-);
-
+// ✅ بعد كده Helmet
+// app.use(
+//   helmet({
+//     contentSecurityPolicy: {
+//       directives: {
+//         defaultSrc: ["'self'"],
+//         scriptSrc: ["'self'", "'unsafe-inline'", "https://trusted-cdn.com"],
+//         styleSrc: ["'self'", "'unsafe-inline'"],
+//         imgSrc: ["'self'", "data:", "https://res.cloudinary.com"],
+//         connectSrc: ["'self'", "http://localhost:5000"], // ✅ أضف ده علشان يسمح بالrequests من الفرونت
+//       },
+//     },
+//   })
+// );
 // ✅ Rate Limiting
 const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 دقيقة
@@ -62,13 +61,16 @@ const loginLimiter = rateLimit({
   max: 10,
   message: { message: "Too many login attempts, try again in 10 min." },
 });
-app.use("/api/auth/login", loginLimiter);
+// app.use("/api/auth/login", );
 
 // ✅ Routes
+
+// app.use("/api/stripe", require("./routes/stripe"));
 app.use("/api/address", require("./routes/addressRoutes"));
 app.use("/api/products", require("./routes/productFilter"));
-app.use("/api/orders", require("./routes/order"));
+// app.use("/api/orders", require("./routes/order"));
 app.use("/api/cart", require("./routes/cart"));
+app.use("/api/checkout", require("./routes/checkout"));
 app.use("/api/variants", require("./routes/variantsRouter"));
 app.use("/api/categories", require("./routes/categoriesRoutes"));
 app.use("/api/subcategories", require("./routes/subcategoriesRoutes"));

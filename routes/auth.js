@@ -70,7 +70,8 @@ router.post(
 router.post("/logout", (req, res) => {
   res.clearCookie("token", {
     httpOnly: true,
-    secure: process.env.NODE_ENV === "production" ? true : false,
+    secure: false,
+    // secure: process.env.NODE_ENV === "production" ? true : false,
     sameSite: "lax",
   });
   return res.status(200).json({ message: "Logout successful" });
@@ -108,11 +109,12 @@ router.post(
 
     // Set token in cookie
     res.cookie("token", token, {
-      httpOnly: true, // Prevent client-side access to the cookie
-      secure: process.env.NODE_ENV === "production", // Use secure in production
-      // secure: false, // Use secure in production
+      httpOnly: false, // Prevent client-side access to the cookie
+      // httpOnly: true, // Prevent client-side access to the cookie
+      // secure: process.env.NODE_ENV === "production", // Use secure in production
+      secure: false, // Use secure in production
       maxAge: 24 * 60 * 60 * 1000, // Cookie expiry: 1 day
-      // sameSite: "strict", // Prevent CSRF
+      // sameSite: "strict", // Prevent CSRFh
       sameSite: "lax", // Prevent CSRF
     });
 
@@ -123,6 +125,7 @@ router.post(
 
 router.get("/check-auth", (req, res) => {
   const token = req.cookies.token;
+  // console.log(token);
 
   if (!token) {
     return res.status(401).json({ isAuthenticated: false });

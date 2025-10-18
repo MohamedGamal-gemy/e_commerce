@@ -262,142 +262,94 @@ function buildSortOption(sort) {
 // );
 
 // #######################################################
-// router.get(
-//   "/show",
-//   asyncHandler(async (req, res) => {
-//     const { color, subcategory } = req.query;
+router.get(
+  "/subcategories",
+  asyncHandler(async (req, res) => {
+    const aggregationPipeline = [
+      {
+        $sort: { _id: 1 },
+      },
 
-//     const colorsArray = color
-//       ? color.split(",").map((c) => c.trim().toLowerCase())
-//       : [];
+      {
+        $group: {
+          _id: "$subcategory",
+          products: {
+            $push: {
+              _id: "$_id",
+              title: "$title",
+              slug: "$slug",
+              variants: "$variants",
+            },
+          },
+        },
+      },
 
-//     const subcategoriesArray = subcategory
-//       ? subcategory.split(",").map((s) => s.trim().toLowerCase())
-//       : [];
+      {
+        $project: {
+          _id: 0,
+          subcategoryId: "$_id",
+          secondProduct: {
+            $arrayElemAt: ["$products", 1],
+          },
+        },
+      },
 
-//     const hasColorFilter = colorsArray.length > 0;
-//     const hasSubcategoryFilter = subcategoriesArray.length > 0;
+      {
+        $match: {
+          secondProduct: { $ne: null },
+        },
+      },
 
-//     const subcategoryNameMatchStage = hasSubcategoryFilter
-//       ? [
-//           {
-//             $match: {
-//               $expr: {
-//                 $in: [{ $toLower: "$subcategory.name" }, subcategoriesArray],
-//               },
-//             },
-//           },
-//         ]
-//       : [];
+      {
+        $lookup: {
+          from: "subcategories",
+          localField: "subcategoryId",
+          foreignField: "_id",
+          as: "subcategoryDetails",
+        },
+      },
 
-//     const pipeline = [
-//       ...(hasColorFilter
-//         ? [
-//             {
-//               $lookup: {
-//                 from: "productvariants",
-//                 localField: "variants",
-//                 foreignField: "_id",
-//                 as: "matchedVariants",
-//                 pipeline: [
-//                   {
-//                     $match: {
-//                       $expr: {
-//                         $in: [{ $toLower: "$color.name" }, colorsArray],
-//                       },
-//                     },
-//                   },
-//                 ],
-//               },
-//             },
-//             { $match: { matchedVariants: { $ne: [] } } },
-//             { $unset: "matchedVariants" },
-//           ]
-//         : []),
+      {
+        $unwind: "$subcategoryDetails",
+      },
 
-//       {
-//         $lookup: {
-//           from: "subcategories",
-//           localField: "subcategory",
-//           foreignField: "_id",
-//           as: "subcategory",
-//         },
-//       },
+      {
+        $lookup: {
+          from: "productvariants",
+          localField: "secondProduct.variants.0",
+          foreignField: "_id",
+          as: "variantDetails",
+        },
+      },
 
-//       {
-//         $unwind: {
-//           path: "$subcategory",
-//           // preserveNullAndEmptyArrays: true
-//         },
-//       },
+      {
+        $unwind: {
+          path: "$variantDetails",
+          preserveNullAndEmptyArrays: true,
+        },
+      },
 
-//       ...subcategoryNameMatchStage,
+      {
+        $project: {
+          subcategory: "$subcategoryDetails.name",
+          title: "$secondProduct.title",
+          slug: "$secondProduct.slug",
+          firstImageUrl: {
+            $arrayElemAt: ["$variantDetails.images.url", 0],
+          },
+        },
+      },
+    ];
 
-//       {
-//         $lookup: {
-//           from: "productvariants",
-//           localField: "variants",
-//           foreignField: "_id",
-//           as: "variants",
-//         },
-//       },
+    const results = await Product.aggregate(aggregationPipeline);
 
-//       {
-//         $project: {
-//           _id: 1,
-//           title: 1,
-//           price: 1,
-//           rating: 1,
-//           subcategory: "$subcategory.name",
-
-//           variants: {
-//             $cond: {
-//               if: hasColorFilter,
-//               then: {
-//                 $filter: {
-//                   input: "$variants",
-//                   as: "v",
-//                   cond: {
-//                     $in: [{ $toLower: "$$v.color.name" }, colorsArray],
-//                   },
-//                 },
-//               },
-//               else: "$variants",
-//             },
-//           },
-//         },
-//       },
-
-//       {
-//         $project: {
-//           _id: 1,
-//           title: 1,
-//           price: 1,
-//           rating: 1,
-//           subcategory: 1,
-
-//           variants: {
-//             $map: {
-//               input: "$variants",
-//               as: "v",
-//               in: {
-//                 _id: "$$v._id",
-//                 color: { $toLower: "$$v.color.name" },
-//                 mainImage: {
-//                   $arrayElemAt: ["$$v.images.url", 0],
-//                 },
-//               },
-//             },
-//           },
-//         },
-//       },
-//     ];
-
-//     const products = await Product.aggregate(pipeline);
-//     res.json(products);
-//   })
-// );
-
+    res.status(200).json({
+      status: "success",
+      count: results.length,
+      data: results,
+    });
+  })
+);
 router.get(
   "/show",
   asyncHandler(async (req, res) => {
@@ -406,39 +358,85 @@ router.get(
       subcategory,
       minPrice,
       maxPrice,
+      search,
       sort = "latest",
       page = 1,
       limit = 9,
     } = req.query;
 
-    // تحويل القيم من query string
     const colorsArray = color
       ? color.split(",").map((c) => c.trim().toLowerCase())
       : [];
-
     const subcategoriesArray = subcategory
       ? subcategory.split(",").map((s) => s.trim().toLowerCase())
       : [];
 
     const hasColorFilter = colorsArray.length > 0;
     const hasSubcategoryFilter = subcategoriesArray.length > 0;
-
     const skip = (parseInt(page) - 1) * parseInt(limit);
 
-    // فلترة حسب اسم الـ subcategory
-    const subcategoryNameMatchStage = hasSubcategoryFilter
-      ? [
-          {
-            $match: {
-              $expr: {
-                $in: [{ $toLower: "$subcategory.name" }, subcategoriesArray],
-              },
-            },
-          },
-        ]
-      : [];
+    const priceMatch = {};
+    if (minPrice) priceMatch.$gte = parseFloat(minPrice);
+    if (maxPrice) priceMatch.$lte = parseFloat(maxPrice);
+    const hasPriceFilter = Object.keys(priceMatch).length > 0;
 
-    // تحديد نوع الترتيب
+    const getColorFilterStages = () => {
+      if (!hasColorFilter) return [];
+      return [
+        {
+          $lookup: {
+            from: "productvariants",
+            localField: "variants",
+            foreignField: "_id",
+            as: "matchedVariants",
+            pipeline: [
+              { $addFields: { colorLower: { $toLower: "$color.name" } } },
+              { $match: { colorLower: { $in: colorsArray } } },
+            ],
+          },
+        },
+        { $match: { matchedVariants: { $ne: [] } } },
+      ];
+    };
+
+    const getTitleFilterStage = () => {
+      if (!search) return [];
+      return [{ $match: { title: { $regex: search, $options: "i" } } }];
+    };
+
+    const getPriceFilterStage = () => {
+      if (!hasPriceFilter) return [];
+      return [{ $match: { price: priceMatch } }];
+    };
+
+    const getSubcategoryFilterStages = () => {
+      return [
+        {
+          $lookup: {
+            from: "subcategories",
+            localField: "subcategory",
+            foreignField: "_id",
+            as: "subcategory",
+          },
+        },
+        { $unwind: "$subcategory" },
+        ...(hasSubcategoryFilter
+          ? [
+              {
+                $match: {
+                  $expr: {
+                    $in: [
+                      { $toLower: "$subcategory.name" },
+                      subcategoriesArray,
+                    ],
+                  },
+                },
+              },
+            ]
+          : []),
+      ];
+    };
+
     const sortStage = (() => {
       switch (sort) {
         case "price_asc":
@@ -452,76 +450,23 @@ router.get(
       }
     })();
 
-    // 🔥 بناء كائن فلترة الأسعار بشكل صحيح
-    const priceMatch = {};
+    const filteringPipeline = [
+      // 1. الفلاتر الأساسية (الأسرع)
+      ...getTitleFilterStage(),
+      ...getPriceFilterStage(), // 2. فلترة الألوان (تعتمد على lookup)
+      ...getColorFilterStages(), // 3. فلترة الفئات الفرعية (تعتمد على lookup)
+      ...getSubcategoryFilterStages(),
+    ]; // -------------------- // 4. حساب العدد الإجمالي (Total Count) // --------------------
 
-    if (minPrice) {
-      priceMatch.$gte = parseFloat(minPrice);
-    }
+    const totalCount = await Product.aggregate([
+      ...filteringPipeline, // نستخدم كل مراحل الفلترة المشتركة
+      { $count: "total" },
+    ]);
+    const totalProducts = totalCount[0]?.total || 0; // -------------------- // 5. بناء بايبلاين النتائج النهائية (مع العرض والترتيب والترقيم) // --------------------
 
-    if (maxPrice) {
-      priceMatch.$lte = parseFloat(maxPrice);
-    }
+    const finalPipeline = [
+      ...filteringPipeline, // مراحل الفلترة // ربط الـ variants (لإظهارها في النتيجة)
 
-    const hasPriceFilter = Object.keys(priceMatch).length > 0;
-
-    const pipeline = [
-      ...(hasColorFilter
-        ? [
-            {
-              $lookup: {
-                from: "productvariants",
-                localField: "variants",
-                foreignField: "_id",
-                as: "matchedVariants",
-                pipeline: [
-                  {
-                    $addFields: {
-                      colorLower: { $toLower: "$color.name" },
-                    },
-                  },
-                  {
-                    $match: {
-                      colorLower: { $in: colorsArray },
-                    },
-                  },
-                ],
-              },
-            },
-            {
-              $match: {
-                matchedVariants: { $ne: [] },
-              },
-            },
-          ]
-        : []),
-
-      // 🟢 مرحلة فلترة الأسعار المُعدلة بالكامل
-      ...(hasPriceFilter
-        ? [
-            {
-              $match: {
-                price: priceMatch,
-              },
-            },
-          ]
-        : []),
-
-      // 🟢 ربط الـ subcategory
-      {
-        $lookup: {
-          from: "subcategories",
-          localField: "subcategory",
-          foreignField: "_id",
-          as: "subcategory",
-        },
-      },
-      { $unwind: "$subcategory" },
-      ...subcategoryNameMatchStage,
-
-      // ... (باقي البايبلاين)
-
-      // 🟢 ربط الـ variants
       {
         $lookup: {
           from: "productvariants",
@@ -529,9 +474,8 @@ router.get(
           foreignField: "_id",
           as: "variants",
         },
-      },
+      }, // فلترة الـvariants نفسها لو فيه لون محدد (لتنسيق الإخراج فقط)
 
-      // 🟢 فلترة الـvariants نفسها لو فيه لون محدد
       {
         $addFields: {
           variants: {
@@ -541,18 +485,15 @@ router.get(
                 $filter: {
                   input: "$variants",
                   as: "v",
-                  cond: {
-                    $in: [{ $toLower: "$$v.color.name" }, colorsArray],
-                  },
+                  cond: { $in: [{ $toLower: "$$v.color.name" }, colorsArray] },
                 },
               },
               else: "$variants",
             },
           },
         },
-      },
+      }, // تنسيق المخرجات النهائية (Project)
 
-      // 🟢 تنسيق المخرجات النهائية
       {
         $project: {
           _id: 1,
@@ -568,46 +509,27 @@ router.get(
                 _id: "$$v._id",
                 color: { $toLower: "$$v.color.name" },
                 mainImage: { $arrayElemAt: ["$$v.images.url", 0] },
+                secondImage: { $arrayElemAt: ["$$v.images.url", 1] },
               },
             },
           },
         },
-      },
+      }, // الترتيب والترقيم
 
-      // 🟢 الترتيب
       { $sort: sortStage },
-
-      // 🟢 Pagination
       { $skip: skip },
       { $limit: parseInt(limit) },
-    ];
+    ]; // تنفيذ البايبلاين للحصول على المنتجات
 
-    // تنفيذ البايبلاين
-    const products = await Product.aggregate(pipeline);
-
-    // 🟢 حساب الإجمالي بدون pagination
-    const totalCountPipeline = pipeline.filter(
-      (stage) =>
-        !(
-          "$skip" in stage ||
-          "$limit" in stage ||
-          "$sort" in stage ||
-          "$project" in stage
-        )
-    );
-
-    const totalCount = await Product.aggregate([
-      ...totalCountPipeline,
-      { $count: "total" },
-    ]);
+    const products = await Product.aggregate(finalPipeline);
 
     res.json({
       products,
       pagination: {
-        total: totalCount[0]?.total || 0,
+        total: totalProducts,
         page: parseInt(page),
         limit: parseInt(limit),
-        totalPages: Math.ceil((totalCount[0]?.total || 0) / parseInt(limit)),
+        totalPages: Math.ceil(totalProducts / parseInt(limit)),
       },
     });
   })
