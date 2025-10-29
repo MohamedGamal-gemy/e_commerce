@@ -4,14 +4,10 @@ const cloudinary = require("../config/cloudinary");
 const Subcategory = require("../models/subcategoryModel");
 const ProductVariant = require("../models/variantsModel");
 
-// const {
-//   Product,
-//   validateProduct,
-//   validateProductUpdate,
-// } = require("../models/productModel");
 const Product = require("../models/productModel");
 const { upload } = require("../middlewares/upload");
 const redis = require("../config/redis");
+const { default: mongoose } = require("mongoose");
 const router = express.Router();
 
 router.post(
@@ -92,176 +88,165 @@ router.get("/", async (req, res) => {
     res.status(500).json({ error: "Server error" });
   }
 });
+// 
+router.get(
+  "/admin/analytics",
+  asyncHandler(async (req, res) => {
+    const [stats] = await Product.aggregate([
+      {
+        $lookup: {
+          from: "productvariants",
+          localField: "variants",
+          foreignField: "_id",
+          as: "variants",
+        },
+      },
+      {
+        $addFields: {
+          totalStock: {
+            $sum: {
+              $map: {
+                input: "$variants",
+                as: "variant",
+                in: { $sum: "$$variant.sizes.stock" },
+              },
+            },
+          },
+        },
+      },
+      {
+        $group: {
+          _id: null,
+          totalProducts: { $sum: 1 },
+          averageRating: { $avg: "$rating" },
+          totalStock: { $sum: "$totalStock" },
+          lowStockProducts: {
+            $sum: {
+              $cond: [{ $lt: ["$totalStock", 5] }, 1, 0],
+            },
+          },
+        },
+      },
+      {
+        $project: {
+          _id: 0,
+          totalProducts: 1,
+          averageRating: { $round: ["$averageRating", 1] },
+          totalStock: 1,
+          lowStockProducts: 1,
+        },
+      },
+    ]);
 
-function buildSortOption(sort) {
-  switch (sort) {
-    case "price-asc":
-      return { price: 1 };
-    case "price-desc":
-      return { price: -1 };
-    case "rating":
-      return { rating: -1 };
-    case "old":
-      return { createdAt: 1 };
-    default: // newest
-      return { createdAt: -1 };
-  }
-}
-// router.get(
-//   "/show",
-//   asyncHandler(async (req, res) => {
-//     const { limit = 20, subcategory, color } = req.query;
+    res.json(stats || {
+      totalProducts: 0,
+      averageRating: 0,
+      totalStock: 0,
+      lowStockProducts: 0,
+    });
+  })
+);
 
-//     const colorsArray = color
-//       ? color.split(",").map((c) => c.toLowerCase())
-//       : null;
-//     const subcategoriesArray = subcategory ? subcategory.split(",") : null;
+// 
+router.get(
+  "/admin",
+  asyncHandler(async (req, res) => {
+    const { subcategory, page = 1, limit = 10 } = req.query;
 
-//     const match = {};
-//     // if (subcategory) {
-//     //   // match["subcategory"] = { $in: subcategory.split(",") };
-//     //   match["subcategory.name"] = { $in: subcategory.split(",") };
-//     // }
+    const pageNumber = parseInt(page);
+    const pageSize = parseInt(limit);
+    const skip = (pageNumber - 1) * pageSize;
 
-//     const result = await Product.aggregate([
-//       {
-//         $lookup: {
-//           from: "subcategories",
-//           localField: "subcategory",
-//           foreignField: "_id",
-//           as: "subcategory",
-//         },
-//       },
-//       { $unwind: "$subcategory" },
-//       {
-//         $lookup: {
-//           from: "productvariants",
-//           localField: "variants",
-//           foreignField: "_id",
-//           as: "variants",
-//         },
-//       },
+    const matchStage = {};
 
-//       // 🟢 طبّق الماتش بتاع الـ subcategory هنا
-//       // { $match: match },
-//       // { $match: match },
-//       {
-//         $facet: {
-//           products: [
-//             ...(colorsArray
-//               ? [
-//                   {
-//                     $set: {
-//                       variants: {
-//                         $filter: {
-//                           input: "$variants",
-//                           as: "v",
-//                           cond: {
-//                             $in: [{ $toLower: "$$v.color.name" }, colorsArray],
-//                           },
-//                         },
-//                       },
-//                     },
-//                   },
-//                   { $match: { variants: { $ne: [] } } },
-//                 ]
-//               : []),
-//             //
-//             ...(subcategoriesArray
-//               ? [
-//                   {
-//                     $set: {
-//                       subcategory: {
-//                         $cond: {
-//                           if: {
-//                             $in: ["$subcategory.name", subcategoriesArray],
-//                           },
-//                           then: "$subcategory",
-//                           else: null,
-//                         },
-//                       },
-//                     },
-//                   },
-//                   { $match: { subcategory: { $ne: null } } },
-//                 ]
-//               : []),
+    if (subcategory) {
+      matchStage["subcategory.name"] = subcategory;
+    }
 
-//             {
-//               $project: {
-//                 title: 1,
-//                 price: 1,
-//                 rating: 1,
-//                 subcategory: "$subcategory.name",
-//                 variants: {
-//                   $map: {
-//                     input: "$variants",
-//                     as: "v",
-//                     in: {
-//                       _id: "$$v._id",
-//                       color: {
-//                         name: { $toLower: "$$v.color.name" },
-//                         value: "$$v.color.value",
-//                       },
-//                       firstImage: { $arrayElemAt: ["$$v.images.url", 0] },
-//                     },
-//                   },
-//                 },
-//               },
-//             },
-//             // { $match: match },
-//             { $limit: Number(limit) },
-//           ],
+    const productsAgg = await Product.aggregate([
+      {
+        $lookup: {
+          from: "productvariants",
+          localField: "variants",
+          foreignField: "_id",
+          as: "variants",
+        },
+      },
+      {
+        $lookup: {
+          from: "subcategories",
+          localField: "subcategory",
+          foreignField: "_id",
+          as: "subcategory",
+        },
+      },
+      { $unwind: { path: "$subcategory", preserveNullAndEmptyArrays: true } },
 
-//           colors: [
-//             { $unwind: "$variants" },
+      {
+        $addFields: {
+          totalStock: {
+            $sum: {
+              $map: {
+                input: "$variants",
+                as: "variant",
+                in: { $sum: "$$variant.sizes.stock" },
+              },
+            },
+          },
+          mainImage: {
+            $arrayElemAt: [
+              {
+                $map: {
+                  input: { $first: "$variants.images" },
+                  as: "img",
+                  in: "$$img.url",
+                },
+              },
+              0,
+            ],
+          },
+        },
+      },
 
-//             {
-//               $group: {
-//                 _id: { $toLower: "$variants.color.name" },
-//                 value: { $first: "$variants.color.value" },
-//                 counter: { $sum: 1 }, // 🟢 هيعد بناءً على الفلترة
-//               },
-//             },
-//             {
-//               $project: {
-//                 _id: 0,
-//                 name: "$_id",
-//                 value: 1,
-//                 counter: 1,
-//               },
-//             },
-//             // { $match: { name: "black" } },
-//             // { $match: match },
-//           ],
+      // فلترة إذا كانت subcategory موجودة
+      ...(subcategory ? [{ $match: matchStage }] : []),
 
-//           subcategories: [
-//             {
-//               $group: {
-//                 _id: "$subcategory.name",
-//                 counter: { $sum: 1 }, // 🟢 هيعد عدد المنتجات في كل subcategory
-//               },
-//             },
-//             {
-//               $project: {
-//                 _id: 0,
-//                 name: "$_id",
-//                 counter: 1,
-//               },
-//             },
-//           ],
-//         },
-//       },
-//     ]);
+      {
+        $project: {
+          title: 1,
+          price: 1,
+          rating: 1,
+          totalStock: 1,
+          mainImage: 1,
+          subcategory: "$subcategory.name",
+          createdAt: 1,
+        },
+      },
 
-//     res.json({
-//       products: result[0].products,
-//       colors: result[0].colors,
-//       subcategories: result[0].subcategories,
-//     });
-//   })
-// );
+      { $sort: { createdAt: -1 } },
 
-// #######################################################
+      // استخدام $facet لتجميع البيانات + العد الكلي
+      {
+        $facet: {
+          metadata: [{ $count: "total" }],
+          data: [{ $skip: skip }, { $limit: pageSize }],
+        },
+      },
+    ]);
+
+    const products = productsAgg[0].data;
+    const total = productsAgg[0].metadata[0]?.total || 0;
+
+    res.json({
+      products,
+      total,
+      page: pageNumber,
+      pages: Math.ceil(total / pageSize),
+    });
+  })
+);
+
+
 router.get(
   "/subcategories",
   asyncHandler(async (req, res) => {
@@ -535,7 +520,79 @@ router.get(
   })
 );
 // #######################################################
+// admin
+router.get(
+  "/admin/:id",
+  asyncHandler(async (req, res) => {
+    const { id } = req.params;
 
+    const product = await Product.aggregate([
+      { $match: { _id: new mongoose.Types.ObjectId(id) } },
+
+      // ربط الـ variants
+      {
+        $lookup: {
+          from: "productvariants",
+          localField: "variants",
+          foreignField: "_id",
+          as: "variants",
+        },
+      },
+
+      {
+        $lookup: {
+          from: "subcategories",
+          localField: "subcategory",
+          foreignField: "_id",
+          as: "subcategory",
+        },
+      },
+
+      // Unwind arrays
+      { $unwind: { path: "$subcategory", preserveNullAndEmptyArrays: true } },
+
+      // حساب totalStock
+      {
+        $addFields: {
+          totalStock: {
+            $sum: {
+              $map: {
+                input: "$variants",
+                as: "variant",
+                in: {
+                  $sum: "$$variant.sizes.stock",
+                },
+              },
+            },
+          },
+        },
+      },
+
+      // تحديد الحقول النهائية
+      {
+        $project: {
+          title: 1,
+          description: 1,
+          price: 1,
+          discount: 1,
+          rating: 1,
+          totalStock: 1,
+          subcategory: "$subcategory.name",
+          variants: 1,
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      },
+    ]);
+
+    if (!product.length)
+      return res.status(404).json({ message: "Product not found" });
+
+    res.json({ product: product[0] });
+  })
+);
+
+// 
 router.get(
   "/:id",
   asyncHandler(async (req, res) => {
@@ -626,17 +683,37 @@ router.patch(
   })
 );
 
+// router.delete(
+//   "/:id",
+//   asyncHandler(async (req, res) => {
+//     const { id } = req.params;
+//     const deletedProduct = await Product.findByIdAndDelete(id);
+
+//     if (!deletedProduct) {
+//       return res.status(404).json({ message: "Product not found" });
+//     }
+
+//     res.json({ message: "Product has been deleted successfully" });
+//   })
+// );
+// admin
 router.delete(
-  "/:id",
+  "/admin/:id",
   asyncHandler(async (req, res) => {
     const { id } = req.params;
-    const deletedProduct = await Product.findByIdAndDelete(id);
 
-    if (!deletedProduct) {
-      return res.status(404).json({ message: "Product not found" });
+    const product = await Product.findById(id);
+    if (!product) {
+      res.status(404);
+      throw new Error("Product not found ❌");
     }
 
-    res.json({ message: "Product has been deleted successfully" });
+    await product.deleteOne();
+
+    res.status(200).json({
+      message: "Product deleted successfully ✅",
+      deletedId: id,
+    });
   })
 );
 

@@ -29,15 +29,6 @@ const orderSchema = new mongoose.Schema(
     shipping: { type: Number, default: 0 },
     discount: { type: Number, default: 0 },
     total: { type: Number, required: true },
-    // billingDetails: {
-    //   fullName: String,
-    //   email: String,
-    //   phone: Number,
-    //   address: String,
-    //   city: String,
-    //   postalCode: String,
-    //   country: String,
-    // },
     billingDetails: {
       fullName: { type: String, required: true },
       email: { type: String, required: true },
@@ -48,11 +39,6 @@ const orderSchema = new mongoose.Schema(
       country: { type: String, required: true },
     },
 
-    // status: {
-    //   type: String,
-    //   enum: ["pending", "paid", "failed"],
-    //   default: "pending",
-    // },
     status: {
       type: String,
       enum: [

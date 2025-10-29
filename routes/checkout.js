@@ -7,82 +7,8 @@ const Stripe = require("stripe");
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 const Cart = require("../models/CartItem");
 const Order = require("../models/Order");
+const { User } = require("../models/userModel");
 
-// router.post("/create-order", async (req, res) => {
-//   try {
-//     const { sessionId } = req.body;
-
-//     if (!sessionId) {
-//       return res.status(400).json({ error: "Session ID is required" });
-//     }
-
-//     // 🛒 جلب بيانات الكارت بالـ sessionId
-//     const cart = await Cart.findOne({ sessionId })
-//       .populate({
-//         path: "items.productId",
-//         select: "title price slug",
-//       })
-//       .populate({
-//         path: "items.variantId",
-//         select: "color images",
-//         transform: (doc) => {
-//           if (!doc) return doc;
-//           return {
-//             ...doc.toObject(),
-//             images: doc.images?.length ? [doc.images[0]] : [],
-//           };
-//         },
-//       });
-
-//     if (!cart || !cart.items.length) {
-//       return res.status(400).json({ error: "Cart is empty or not found" });
-//     }
-
-//     // 🧾 إنشاء order أولاً (status pending)
-//     const order = new Order({
-//       sessionId,
-//       items: cart.items,
-//       totalAmount: cart.subtotal,
-//       status: "pending",
-//       subtotal: cart.subtotal,
-//       total: cart.subtotal + 50,
-//     });
-
-//     await order.save();
-
-//     // 🧮 إعداد عناصر Stripe
-//     const line_items = cart.items.map((item) => ({
-//       price_data: {
-//         currency: "egp",
-//         product_data: {
-//           name: item.productId?.title || "Unknown Product",
-//           description: `Color: ${item.variantId?.color?.name} | Size: ${item.size}`,
-//           images: [item.variantId?.images?.[0]?.url || ""],
-//         },
-//         unit_amount: Math.round(item.price * 100),
-//       },
-//       quantity: item.quantity,
-//     }));
-
-//     // 💳 إنشاء Stripe session باستخدام orderId الحقيقي
-//     const session = await stripe.checkout.sessions.create({
-//       payment_method_types: ["card"],
-//       line_items,
-//       mode: "payment",
-//       success_url: `${process.env.CLIENT_URL}/checkout/success?orderId=${order._id}`,
-//       cancel_url: `${process.env.CLIENT_URL}/checkout/cancel`,
-//     });
-
-//     // 🔗 حفظ stripeSessionId جوّه الـ order
-//     order.stripeSessionId = session.id;
-//     await order.save();
-
-//     res.json({ url: session.url });
-//   } catch (error) {
-//     console.error("❌ Error creating order:", error);
-//     res.status(500).json({ error: "Failed to create order" });
-//   }
-// });
 
 router.post("/create-order", async (req, res) => {
   try {
@@ -301,7 +227,6 @@ router.get("/get-orders", async (req, res) => {
 //   }
 // });
 
-
 // desd
 router.get("/admin/orders", async (req, res) => {
   try {
@@ -429,35 +354,238 @@ router.patch("/orders/:id/status", async (req, res) => {
 });
 
 //
+/**
+ * @route   GET /api/checkout/admin/orders/analytics
+ * @desc    Get detailed analytics for orders (dashboard)
+ * @query   ?range=month&status=paid
+ */
+// router.get("/orders/analytics", async (req, res) => {
+//   try {
+//     const { range = "month", status } = req.query;
+//     const now = new Date();
+//     let startDate, dateFormat;
 
+//     // 🗓️ تحديد النطاق الزمني
+//     switch (range) {
+//       case "day":
+//         startDate = new Date(now);
+//         startDate.setHours(0, 0, 0, 0);
+//         dateFormat = "%Y-%m-%d %H:00"; // ساعات اليوم
+//         break;
+//       case "week":
+//         startDate = new Date(now);
+//         startDate.setDate(now.getDate() - 7);
+//         dateFormat = "%Y-%m-%d"; // أيام الأسبوع
+//         break;
+//       case "month":
+//         startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+//         dateFormat = "%Y-%m-%d"; // أيام الشهر
+//         break;
+//       case "year":
+//         startDate = new Date(now.getFullYear(), 0, 1);
+//         dateFormat = "%Y-%m"; // شهور السنة
+//         break;
+//       default:
+//         startDate = new Date(0);
+//         dateFormat = "%Y-%m-%d";
+//     }
+
+//     // 🧩 الفلاتر الديناميكية
+//     const matchStage = { createdAt: { $gte: startDate } };
+//     if (status) matchStage.status = status;
+
+//     // 📊 إجماليات عامة
+//     const generalStats = await Order.aggregate([
+//       { $match: matchStage },
+//       {
+//         $group: {
+//           _id: "$status",
+//           count: { $sum: 1 },
+//           totalRevenue: { $sum: "$total" },
+//         },
+//       },
+//     ]);
+
+//     const totals = {
+//       totalOrders: 0,
+//       pending: 0,
+//       paid: 0,
+//       cancelled: 0,
+//       totalRevenue: 0,
+//     };
+
+//     generalStats.forEach((s) => {
+//       totals.totalOrders += s.count;
+//       totals.totalRevenue += s.totalRevenue || 0;
+//       if (s._id === "pending") totals.pending = s.count;
+//       if (s._id === "paid") totals.paid = s.count;
+//       if (s._id === "cancelled") totals.cancelled = s.count;
+//     });
+
+//     // 📈 الإيرادات حسب الفترة الزمنية
+//     const ordersTrend = await Order.aggregate([
+//       { $match: matchStage },
+//       {
+//         $group: {
+//           _id: {
+//             date: { $dateToString: { format: dateFormat, date: "$createdAt" } },
+//             status: "$status",
+//           },
+//           count: { $sum: 1 },
+//         },
+//       },
+//       {
+//         $group: {
+//           _id: "$_id.date",
+//           statuses: {
+//             $push: {
+//               status: "$_id.status",
+//               count: "$count",
+//             },
+//           },
+//         },
+//       },
+//       {
+//         $project: {
+//           _id: 0,
+//           date: "$_id",
+//           statuses: 1,
+//         },
+//       },
+//       { $sort: { date: 1 } },
+//     ]);
+
+//     // 🏆 أعلى المنتجات مبيعًا
+//     const topProducts = await Order.aggregate([
+//       { $unwind: "$items" },
+//       {
+//         $group: {
+//           _id: "$items.productId",
+//           totalSold: { $sum: "$items.quantity" },
+//           totalRevenue: { $sum: "$items.price" },
+//         },
+//       },
+//       {
+//         $lookup: {
+//           from: "products",
+//           localField: "_id",
+//           foreignField: "_id",
+//           as: "product",
+//         },
+//       },
+//       {
+//         $unwind: {
+//           path: "$product",
+//           preserveNullAndEmptyArrays: true,
+//         },
+//       },
+//       {
+//         $project: {
+//           _id: 1,
+//           totalSold: 1,
+//           totalRevenue: 1,
+//           name: "$product.name",
+//         },
+//       },
+//       { $sort: { totalSold: -1 } },
+//       { $limit: 5 },
+//     ]);
+
+//     // 👥 المستخدمين الجدد خلال نفس الفترة
+//     const newUsers = await User.countDocuments({
+//       createdAt: { $gte: startDate },
+//     });
+
+//     // 📊 مقارنة الفترة السابقة (growth rate)
+//     const previousPeriodStart = new Date(startDate);
+//     const diffDays = Math.ceil((now - startDate) / (1000 * 60 * 60 * 24));
+//     previousPeriodStart.setDate(previousPeriodStart.getDate() - diffDays);
+
+//     const avgOrderValue =
+//       totals.totalOrders > 0
+//         ? (totals.totalRevenue / totals.totalOrders).toFixed(2)
+//         : 0;
+
+//     const previousRevenue = await Order.aggregate([
+//       {
+//         $match: {
+//           createdAt: { $gte: previousPeriodStart, $lt: startDate },
+//           status: "paid",
+//         },
+//       },
+//       {
+//         $group: { _id: null, total: { $sum: "$total" } },
+//       },
+//     ]);
+
+//     const growthRate =
+//       previousRevenue.length > 0
+//         ? (
+//             ((totals.totalRevenue - previousRevenue[0].total) /
+//               previousRevenue[0].total) *
+//             100
+//           ).toFixed(2)
+//         : 0;
+//     const previousOrders = await Order.countDocuments({
+//       createdAt: { $gte: previousPeriodStart, $lt: startDate },
+//       ...(status ? { status } : {}),
+//     });
+
+//     // ✅ النتيجة النهائية
+//     res.json({
+//       summary: {
+//         ...totals,
+//         avgOrderValue: Number(avgOrderValue),
+//       },
+//       trend: revenueTrend,
+//       growthRate: Number(growthRate),
+//       topProducts,
+//       newUsers,
+//     });
+//   } catch (error) {
+//     console.error("❌ Analytics Error:", error);
+//     res.status(500).json({ error: "Failed to get analytics" });
+//   }
+// });
 
 router.get("/orders/analytics", async (req, res) => {
   try {
-    const { range } = req.query; // "day" | "week" | "month" | "year"
-
+    const { range = "month", status } = req.query;
     const now = new Date();
-    let startDate;
+    let startDate, dateFormat;
 
+    // 🗓️ تحديد النطاق الزمني
     switch (range) {
       case "day":
-        startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        startDate = new Date(now);
+        startDate.setHours(0, 0, 0, 0);
+        dateFormat = "%Y-%m-%d %H:00";
         break;
       case "week":
         startDate = new Date(now);
         startDate.setDate(now.getDate() - 7);
+        dateFormat = "%Y-%m-%d";
         break;
       case "month":
         startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+        dateFormat = "%Y-%m-%d";
         break;
       case "year":
         startDate = new Date(now.getFullYear(), 0, 1);
+        dateFormat = "%Y-%m";
         break;
       default:
-        startDate = new Date(0); // كل الوقت
+        startDate = new Date(0);
+        dateFormat = "%Y-%m-%d";
     }
+
+    // 🧩 الفلاتر الديناميكية
+    const matchStage = { createdAt: { $gte: startDate } };
+    if (status) matchStage.status = status;
 
     // 📊 إجماليات عامة
     const generalStats = await Order.aggregate([
+      { $match: matchStage },
       {
         $group: {
           _id: "$status",
@@ -483,31 +611,228 @@ router.get("/orders/analytics", async (req, res) => {
       if (s._id === "cancelled") totals.cancelled = s.count;
     });
 
-    // 📈 الإيرادات حسب التاريخ للفترة المختارة
+    // 📈 الإيرادات حسب الفترة الزمنية
     const revenueTrend = await Order.aggregate([
-      {
-        $match: {
-          createdAt: { $gte: startDate },
-          status: "paid",
-        },
-      },
+      { $match: { ...matchStage, status: "paid" } },
       {
         $group: {
-          _id: {
-            $dateToString: { format: "%Y-%m-%d", date: "$createdAt" },
-          },
+          _id: { $dateToString: { format: dateFormat, date: "$createdAt" } },
           totalRevenue: { $sum: "$total" },
         },
       },
       { $sort: { _id: 1 } },
     ]);
 
-    res.json({ ...totals, revenueTrend });
+    // 📊 توزيع الحالات مع الوقت (optional)
+    const ordersTrend = await Order.aggregate([
+      { $match: matchStage },
+      {
+        $group: {
+          _id: {
+            date: { $dateToString: { format: dateFormat, date: "$createdAt" } },
+            status: "$status",
+          },
+          count: { $sum: 1 },
+        },
+      },
+      {
+        $group: {
+          _id: "$_id.date",
+          statuses: {
+            $push: {
+              status: "$_id.status",
+              count: "$count",
+            },
+          },
+        },
+      },
+      {
+        $project: {
+          _id: 0,
+          date: "$_id",
+          statuses: 1,
+        },
+      },
+      { $sort: { date: 1 } },
+    ]);
+
+    // 🏆 أعلى المنتجات مبيعًا (مع الصور)
+    const topProducts = await Order.aggregate([
+      { $unwind: "$items" },
+      {
+        $group: {
+          _id: "$items.productId",
+          totalSold: { $sum: "$items.quantity" },
+          totalRevenue: { $sum: "$items.price" },
+          variantId: { $first: "$items.variantId" },
+        },
+      },
+      {
+        $lookup: {
+          from: "products",
+          localField: "_id",
+          foreignField: "_id",
+          as: "product",
+        },
+      },
+      { $unwind: "$product" },
+      {
+        $lookup: {
+          from: "productvariants",
+          localField: "variantId",
+          foreignField: "_id",
+          as: "variant",
+        },
+      },
+      { $unwind: "$variant" },
+      {
+        $project: {
+          _id: 1,
+          totalSold: 1,
+          totalRevenue: 1,
+          name: "$product.title",
+          image: { $arrayElemAt: ["$variant.images", 0] }, // ✅ أول صورة
+        },
+      },
+      { $sort: { totalSold: -1 } },
+      { $limit: 5 },
+    ]);
+
+    // 👥 المستخدمين الجدد
+    const newUsers = await User.countDocuments({
+      createdAt: { $gte: startDate },
+    });
+
+    // 💹 مقارنة بالفترة السابقة
+    const previousPeriodStart = new Date(startDate);
+    const diffDays = Math.ceil((now - startDate) / (1000 * 60 * 60 * 24));
+    previousPeriodStart.setDate(previousPeriodStart.getDate() - diffDays);
+
+    const previousRevenue = await Order.aggregate([
+      {
+        $match: {
+          createdAt: { $gte: previousPeriodStart, $lt: startDate },
+          status: "paid",
+        },
+      },
+      {
+        $group: { _id: null, total: { $sum: "$total" } },
+      },
+    ]);
+
+    const growthRate =
+      previousRevenue.length > 0
+        ? (
+            ((totals.totalRevenue - previousRevenue[0].total) /
+              previousRevenue[0].total) *
+            100
+          ).toFixed(2)
+        : 0;
+
+    const previousOrders = await Order.countDocuments({
+      createdAt: { $gte: previousPeriodStart, $lt: startDate },
+      ...(status ? { status } : {}),
+    });
+
+    const avgOrderValue =
+      totals.totalOrders > 0
+        ? (totals.totalRevenue / totals.totalOrders).toFixed(2)
+        : 0;
+
+    // ✅ الرد النهائي
+    res.json({
+      summary: {
+        ...totals,
+        avgOrderValue: Number(avgOrderValue),
+      },
+      trend: revenueTrend,
+      ordersTrend,
+      growthRate: Number(growthRate),
+      topProducts,
+      newUsers,
+    });
   } catch (error) {
     console.error("❌ Analytics Error:", error);
     res.status(500).json({ error: "Failed to get analytics" });
   }
 });
 
+// router.get("/orders/analytics", async (req, res) => {
+//   try {
+//     const { range } = req.query; // "day" | "week" | "month" | "year"
+
+//     const now = new Date();
+//     let startDate;
+
+//     switch (range) {
+//       case "day":
+//         startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+//         break;
+//       case "week":
+//         startDate = new Date(now);
+//         startDate.setDate(now.getDate() - 7);
+//         break;
+//       case "month":
+//         startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+//         break;
+//       case "year":
+//         startDate = new Date(now.getFullYear(), 0, 1);
+//         break;
+//       default:
+//         startDate = new Date(0); // كل الوقت
+//     }
+
+//     // 📊 إجماليات عامة
+//     const generalStats = await Order.aggregate([
+//       {
+//         $group: {
+//           _id: "$status",
+//           count: { $sum: 1 },
+//           totalRevenue: { $sum: "$total" },
+//         },
+//       },
+//     ]);
+
+//     const totals = {
+//       totalOrders: 0,
+//       pending: 0,
+//       paid: 0,
+//       cancelled: 0,
+//       totalRevenue: 0,
+//     };
+
+//     generalStats.forEach((s) => {
+//       totals.totalOrders += s.count;
+//       totals.totalRevenue += s.totalRevenue || 0;
+//       if (s._id === "pending") totals.pending = s.count;
+//       if (s._id === "paid") totals.paid = s.count;
+//       if (s._id === "cancelled") totals.cancelled = s.count;
+//     });
+
+//     // 📈 الإيرادات حسب التاريخ للفترة المختارة
+//     const revenueTrend = await Order.aggregate([
+//       {
+//         $match: {
+//           createdAt: { $gte: startDate },
+//           status: "paid",
+//         },
+//       },
+//       {
+//         $group: {
+//           _id: {
+//             $dateToString: { format: "%Y-%m-%d", date: "$createdAt" },
+//           },
+//           totalRevenue: { $sum: "$total" },
+//         },
+//       },
+//       { $sort: { _id: 1 } },
+//     ]);
+
+//     res.json({ ...totals, revenueTrend });
+//   } catch (error) {
+//     console.error("❌ Analytics Error:", error);
+//     res.status(500).json({ error: "Failed to get analytics" });
+//   }
+// });
 
 module.exports = router;
