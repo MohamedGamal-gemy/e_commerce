@@ -7,68 +7,71 @@ const ProductVariant = require("../models/variantsModel");
 const Product = require("../models/productModel");
 const { upload } = require("../middlewares/upload");
 const redis = require("../config/redis");
+const { facets, show, createProduct } = require("../controllers/products.controller");
+
 const { default: mongoose } = require("mongoose");
 const router = express.Router();
+router.post("/", upload.array("variantImages", 30), asyncHandler(createProduct));
 
-router.post(
-  "/",
-  upload.array("variantImages", 30),
-  asyncHandler(async (req, res) => {
-    let payload;
-    try {
-      payload = JSON.parse(req.body.payload);
-    } catch {
-      return res.status(400).json({ message: "Invalid payload format" });
-    }
+// router.post(
+//   "/",
+//   upload.array("variantImages", 30),
+//   asyncHandler(async (req, res) => {
+//     let payload;
+//     try {
+//       payload = JSON.parse(req.body.payload);
+//     } catch {
+//       return res.status(400).json({ message: "Invalid payload format" });
+//     }
 
-    // ✅ أنشئ المنتج الأساسي
-    const product = new Product({
-      title: payload.title,
-      description: payload.description,
-      price: payload.price,
-      category: payload.category,
-      subcategory: payload.subcategory,
-    });
+//     // ✅ أنشئ المنتج الأساسي
+//     const product = new Product({
+//       title: payload.title,
+//       description: payload.description,
+//       price: payload.price,
+//       category: payload.category,
+//       subcategory: payload.subcategory,
+//     });
 
-    // ✅ اربط الصور بالـ variants
-    const { files } = req;
-    if (files && files.length > 0) {
-      const variantIndexes = JSON.parse(req.body.variantIndexes || "[]");
+//     // ✅ اربط الصور بالـ variants
+//     const { files } = req;
+//     if (files && files.length > 0) {
+//       const variantIndexes = JSON.parse(req.body.variantIndexes || "[]");
 
-      files.forEach((file, idx) => {
-        const variantIndex = variantIndexes[idx];
-        if (payload.variants[variantIndex]) {
-          payload.variants[variantIndex].images.push({
-            url: file.path, // أو secure_url من Cloudinary
-            filename: file.filename,
-          });
-        }
-      });
-    }
+//       files.forEach((file, idx) => {
+//         const variantIndex = variantIndexes[idx];
+//         if (payload.variants[variantIndex]) {
+//           payload.variants[variantIndex].images.push({
+//             url: file.path, // أو secure_url من Cloudinary
+//             filename: file.filename,
+//           });
+//         }
+//       });
+//     }
 
-    // ✅ خزّن الـ Variants في Collection منفصل
-    const variantIds = await Promise.all(
-      payload.variants.map(async (variant) => {
-        const newVariant = await ProductVariant.create({
-          color: variant.color,
-          sizes: variant.sizes,
-          images: variant.images,
-          productId: product._id,
-        });
-        return newVariant._id;
-      })
-    );
+//     // ✅ خزّن الـ Variants في Collection منفصل
+//     const variantIds = await Promise.all(
+//       payload.variants.map(async (variant) => {
+//         const newVariant = await ProductVariant.create({
+//           color: variant.color,
+//           sizes: variant.sizes,
+//           images: variant.images,
+//           productId: product._id,
+//         });
+//         return newVariant._id;
+//       })
+//     );
 
-    // ✅ اربط المنتج بالـ variants
-    product.variants = variantIds;
-    await product.save();
+//     // ✅ اربط المنتج بالـ variants
+//     product.variants = variantIds;
+//     await product.save();
 
-    res.status(201).json({
-      message: "Product created successfully",
-      product,
-    });
-  })
-);
+//     res.status(201).json({
+//       message: "Product created successfully",
+//       product,
+//     });
+//   })
+// );
 //
 router.get("/", async (req, res) => {
   try {
@@ -335,192 +338,199 @@ router.get(
     });
   })
 );
-router.get(
-  "/show",
-  asyncHandler(async (req, res) => {
-    const {
-      color,
-      subcategory,
-      minPrice,
-      maxPrice,
-      search,
-      sort = "latest",
-      page = 1,
-      limit = 9,
-    } = req.query;
+// router.get(
+//   "/show",
+//   asyncHandler(async (req, res) => {
+//     const {
+//       color,
+//       subcategory,
+//       minPrice,
+//       maxPrice,
+//       search,
+//       sort = "latest",
+//       page = 1,
+//       limit = 9,
+//     } = req.query;
 
-    const colorsArray = color
-      ? color.split(",").map((c) => c.trim().toLowerCase())
-      : [];
-    const subcategoriesArray = subcategory
-      ? subcategory.split(",").map((s) => s.trim().toLowerCase())
-      : [];
+//     const colorsArray = color
+//       ? color.split(",").map((c) => c.trim().toLowerCase())
+//       : [];
+//     const subcategoriesArray = subcategory
+//       ? subcategory.split(",").map((s) => s.trim().toLowerCase())
+//       : [];
 
-    const hasColorFilter = colorsArray.length > 0;
-    const hasSubcategoryFilter = subcategoriesArray.length > 0;
-    const skip = (parseInt(page) - 1) * parseInt(limit);
+//     const hasColorFilter = colorsArray.length > 0;
+//     const hasSubcategoryFilter = subcategoriesArray.length > 0;
+//     const skip = (parseInt(page) - 1) * parseInt(limit);
 
-    const priceMatch = {};
-    if (minPrice) priceMatch.$gte = parseFloat(minPrice);
-    if (maxPrice) priceMatch.$lte = parseFloat(maxPrice);
-    const hasPriceFilter = Object.keys(priceMatch).length > 0;
+//     const priceMatch = {};
+//     if (minPrice) priceMatch.$gte = parseFloat(minPrice);
+//     if (maxPrice) priceMatch.$lte = parseFloat(maxPrice);
+//     const hasPriceFilter = Object.keys(priceMatch).length > 0;
 
-    const getColorFilterStages = () => {
-      if (!hasColorFilter) return [];
-      return [
-        {
-          $lookup: {
-            from: "productvariants",
-            localField: "variants",
-            foreignField: "_id",
-            as: "matchedVariants",
-            pipeline: [
-              { $addFields: { colorLower: { $toLower: "$color.name" } } },
-              { $match: { colorLower: { $in: colorsArray } } },
-            ],
-          },
-        },
-        { $match: { matchedVariants: { $ne: [] } } },
-      ];
-    };
+//     const getColorFilterStages = () => {
+//       if (!hasColorFilter) return [];
+//       return [
+//         {
+//           $lookup: {
+//             from: "productvariants",
+//             localField: "variants",
+//             foreignField: "_id",
+//             as: "matchedVariants",
+//             pipeline: [
+//               { $addFields: { colorLower: { $toLower: "$color.name" } } },
+//               { $match: { colorLower: { $in: colorsArray } } },
+//             ],
+//           },
+//         },
+//         { $match: { matchedVariants: { $ne: [] } } },
+//       ];
+//     };
 
-    const getTitleFilterStage = () => {
-      if (!search) return [];
-      return [{ $match: { title: { $regex: search, $options: "i" } } }];
-    };
+//     const getTitleFilterStage = () => {
+//       if (!search) return [];
+//       return [{ $match: { title: { $regex: search, $options: "i" } } }];
+//     };
 
-    const getPriceFilterStage = () => {
-      if (!hasPriceFilter) return [];
-      return [{ $match: { price: priceMatch } }];
-    };
+//     const getPriceFilterStage = () => {
+//       if (!hasPriceFilter) return [];
+//       return [{ $match: { price: priceMatch } }];
+//     };
 
-    const getSubcategoryFilterStages = () => {
-      return [
-        {
-          $lookup: {
-            from: "subcategories",
-            localField: "subcategory",
-            foreignField: "_id",
-            as: "subcategory",
-          },
-        },
-        { $unwind: "$subcategory" },
-        ...(hasSubcategoryFilter
-          ? [
-              {
-                $match: {
-                  $expr: {
-                    $in: [
-                      { $toLower: "$subcategory.name" },
-                      subcategoriesArray,
-                    ],
-                  },
-                },
-              },
-            ]
-          : []),
-      ];
-    };
+//     const getSubcategoryFilterStages = () => {
+//       return [
+//         {
+//           $lookup: {
+//             from: "subcategories",
+//             localField: "subcategory",
+//             foreignField: "_id",
+//             as: "subcategory",
+//           },
+//         },
+//         { $unwind: "$subcategory" },
+//         ...(hasSubcategoryFilter
+//           ? [
+//               {
+//                 $match: {
+//                   $expr: {
+//                     $in: [
+//                       { $toLower: "$subcategory.name" },
+//                       subcategoriesArray,
+//                     ],
+//                   },
+//                 },
+//               },
+//             ]
+//           : []),
+//       ];
+//     };
 
-    const sortStage = (() => {
-      switch (sort) {
-        case "price_asc":
-          return { price: 1 };
-        case "price_desc":
-          return { price: -1 };
-        case "top_rated":
-          return { rating: -1 };
-        default:
-          return { createdAt: -1 };
-      }
-    })();
+//     const sortStage = (() => {
+//       switch (sort) {
+//         case "price_asc":
+//           return { price: 1 };
+//         case "price_desc":
+//           return { price: -1 };
+//         case "top_rated":
+//           return { rating: -1 };
+//         default:
+//           return { createdAt: -1 };
+//       }
+//     })();
 
-    const filteringPipeline = [
-      // 1. الفلاتر الأساسية (الأسرع)
-      ...getTitleFilterStage(),
-      ...getPriceFilterStage(), // 2. فلترة الألوان (تعتمد على lookup)
-      ...getColorFilterStages(), // 3. فلترة الفئات الفرعية (تعتمد على lookup)
-      ...getSubcategoryFilterStages(),
-    ]; // -------------------- // 4. حساب العدد الإجمالي (Total Count) // --------------------
+//     const filteringPipeline = [
+//       // 1. الفلاتر الأساسية (الأسرع)
+//       ...getTitleFilterStage(),
+//       ...getPriceFilterStage(), // 2. فلترة الألوان (تعتمد على lookup)
+//       ...getColorFilterStages(), // 3. فلترة الفئات الفرعية (تعتمد على lookup)
+//       ...getSubcategoryFilterStages(),
+//     ]; // -------------------- // 4. حساب العدد الإجمالي (Total Count) // --------------------
 
-    const totalCount = await Product.aggregate([
-      ...filteringPipeline, // نستخدم كل مراحل الفلترة المشتركة
-      { $count: "total" },
-    ]);
-    const totalProducts = totalCount[0]?.total || 0; // -------------------- // 5. بناء بايبلاين النتائج النهائية (مع العرض والترتيب والترقيم) // --------------------
+//     const totalCount = await Product.aggregate([
+//       ...filteringPipeline, // نستخدم كل مراحل الفلترة المشتركة
+//       { $count: "total" },
+//     ]);
+//     const totalProducts = totalCount[0]?.total || 0; // -------------------- // 5. بناء بايبلاين النتائج النهائية (مع العرض والترتيب والترقيم) // --------------------
 
-    const finalPipeline = [
-      ...filteringPipeline, // مراحل الفلترة // ربط الـ variants (لإظهارها في النتيجة)
+//     const finalPipeline = [
+//       ...filteringPipeline, // مراحل الفلترة // ربط الـ variants (لإظهارها في النتيجة)
 
-      {
-        $lookup: {
-          from: "productvariants",
-          localField: "variants",
-          foreignField: "_id",
-          as: "variants",
-        },
-      }, // فلترة الـvariants نفسها لو فيه لون محدد (لتنسيق الإخراج فقط)
+//       {
+//         $lookup: {
+//           from: "productvariants",
+//           localField: "variants",
+//           foreignField: "_id",
+//           as: "variants",
+//         },
+//       }, // فلترة الـvariants نفسها لو فيه لون محدد (لتنسيق الإخراج فقط)
 
-      {
-        $addFields: {
-          variants: {
-            $cond: {
-              if: hasColorFilter,
-              then: {
-                $filter: {
-                  input: "$variants",
-                  as: "v",
-                  cond: { $in: [{ $toLower: "$$v.color.name" }, colorsArray] },
-                },
-              },
-              else: "$variants",
-            },
-          },
-        },
-      }, // تنسيق المخرجات النهائية (Project)
+//       {
+//         $addFields: {
+//           variants: {
+//             $cond: {
+//               if: hasColorFilter,
+//               then: {
+//                 $filter: {
+//                   input: "$variants",
+//                   as: "v",
+//                   cond: { $in: [{ $toLower: "$$v.color.name" }, colorsArray] },
+//                 },
+//               },
+//               else: "$variants",
+//             },
+//           },
+//         },
+//       }, // تنسيق المخرجات النهائية (Project)
 
-      {
-        $project: {
-          _id: 1,
-          title: 1,
-          price: 1,
-          rating: 1,
-          subcategory: "$subcategory.name",
-          variants: {
-            $map: {
-              input: "$variants",
-              as: "v",
-              in: {
-                _id: "$$v._id",
-                color: { $toLower: "$$v.color.name" },
-                mainImage: { $arrayElemAt: ["$$v.images.url", 0] },
-                secondImage: { $arrayElemAt: ["$$v.images.url", 1] },
-              },
-            },
-          },
-        },
-      }, // الترتيب والترقيم
+//       {
+//         $project: {
+//           _id: 1,
+//           title: 1,
+//           price: 1,
+//           rating: 1,
+//           subcategory: "$subcategory.name",
+//           variants: {
+//             $map: {
+//               input: "$variants",
+//               as: "v",
+//               in: {
+//                 _id: "$$v._id",
+//                 color: { $toLower: "$$v.color.name" },
+//                 mainImage: { $arrayElemAt: ["$$v.images.url", 0] },
+//                 secondImage: { $arrayElemAt: ["$$v.images.url", 1] },
+//               },
+//             },
+//           },
+//         },
+//       }, // الترتيب والترقيم
 
-      { $sort: sortStage },
-      { $skip: skip },
-      { $limit: parseInt(limit) },
-    ]; // تنفيذ البايبلاين للحصول على المنتجات
+//       { $sort: sortStage },
+//       { $skip: skip },
+//       { $limit: parseInt(limit) },
+//     ]; // تنفيذ البايبلاين للحصول على المنتجات
 
-    const products = await Product.aggregate(finalPipeline);
+//     const products = await Product.aggregate(finalPipeline);
 
-    res.json({
-      products,
-      pagination: {
-        total: totalProducts,
-        page: parseInt(page),
-        limit: parseInt(limit),
-        totalPages: Math.ceil(totalProducts / parseInt(limit)),
-      },
-    });
-  })
-);
+//     res.json({
+//       products,
+//       pagination: {
+//         total: totalProducts,
+//         page: parseInt(page),
+//         limit: parseInt(limit),
+//         totalPages: Math.ceil(totalProducts / parseInt(limit)),
+//       },
+//     });
+//   })
+// );
 // #######################################################
 // admin
+
+// ####################################
+router.get("/facets", facets);
+router.get("/show", show);
+
+// ####################################
+
 router.get(
   "/admin/:id",
   asyncHandler(async (req, res) => {
