@@ -1,7 +1,7 @@
 const express = require("express");
 const router = express.Router();
 const asyncHandler = require("express-async-handler");
-const Category = require("../models/categoryModel");
+const Category = require("../models/category/index");
 const redis = require("../config/redis");
 
 // ✅ Get Categories with Redis cache

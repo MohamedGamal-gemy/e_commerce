@@ -1,245 +1,122 @@
-// // 📁 controllers/products/pipeline/buildProductPipeline.js
 
-// function buildProductPipeline({
-//     colorsArray = [],
-//     subcategoriesArray = [],
-//     search,
-//     priceMatch,
-// }) {
-//     const pipeline = [];
-
-//     // 🟢 البحث بالنص
-//     if (search) {
-//         pipeline.push({
-//             $match: { title: { $regex: search, $options: "i" } },
-//         });
-//     }
-
-//     // 🟢 فلترة السعر
-//     if (Object.keys(priceMatch).length > 0) {
-//         pipeline.push({ $match: { price: priceMatch } });
-//     }
-
-//     // 🟢 جلب الفئة الفرعية
-//     pipeline.push({
-//         $lookup: {
-//             from: "subcategories",
-//             localField: "subcategory",
-//             foreignField: "_id",
-//             as: "subcategory",
-//         },
-//     });
-
-//     pipeline.push({
-//         $unwind: {
-//             path: "$subcategory",
-//             preserveNullAndEmptyArrays: true,
-//         },
-//     });
-
-//     // 🟢 فلترة الفئة الفرعية بالاسم
-//     if (subcategoriesArray.length > 0) {
-//         pipeline.push({
-//             $match: {
-//                 $expr: {
-//                     $in: [{ $toLower: "$subcategory.name" }, subcategoriesArray],
-//                 },
-//             },
-//         });
-//     }
-
-//     // 🟢 جلب الـ variants (ألوان)
-//     pipeline.push({
-//         $lookup: {
-//             from: "productvariants",
-//             localField: "_id",        // ✅ العلاقة الصحيحة
-//             foreignField: "productId", // ✅ المفتاح في الـ variant
-//             as: "variants",
-//         },
-//     });
-
-//     // 🟢 فلترة الألوان (إن وجدت)
-//     if (colorsArray.length > 0) {
-//         pipeline.push({
-//             $addFields: {
-//                 variants: {
-//                     $filter: {
-//                         input: "$variants",
-//                         as: "v",
-//                         cond: {
-//                             $in: [{ $toLower: "$$v.color.name" }, colorsArray],
-//                         },
-//                     },
-//                 },
-//             },
-//         });
-//     }
-
-//     // 🟢 تنسيق الـ variants (صور + اللون)
-//     pipeline.push({
-//         $addFields: {
-//             variants: {
-//                 $map: {
-//                     input: "$variants",
-//                     as: "v",
-//                     in: {
-//                         _id: "$$v._id",
-//                         color: { $toLower: "$$v.color.name" },
-//                         mainImage: { $arrayElemAt: ["$$v.images.url", 0] },
-//                         secondImage: { $arrayElemAt: ["$$v.images.url", 1] },
-//                     },
-//                 },
-//             },
-//         },
-//     });
-
-//     // 🟢 استبعاد المنتجات اللي مالهاش variants لو فيه فلترة ألوان
-//     if (colorsArray.length > 0) {
-//         pipeline.push({
-//             $match: {
-//                 variants: { $ne: [] },
-//             },
-//         });
-//     }
-
-//     // 🟢 المخرجات النهائية (Projection)
-//     pipeline.push({
-//         $project: {
-//             _id: 1,
-//             title: 1,
-//             price: 1,
-//             rating: 1,
-//             subcategory: "$subcategory.name",
-//             variants: 1,
-//         },
-//     });
-
-//     return pipeline;
-// }
-
-// module.exports = { buildProductPipeline };
+// 💡 الدالة المساعدة لتحديد الحقول الأساسية المطلوبة بالإدراج (Inclusion)
+function getProjectionFields() {
+    return {
+        _id: 1,
+        title: 1,
+        slug: 1,
+        price: 1,
+        originalPrice: 1,
+        discountIsActive: 1,
+        discountValue: 1,
+        discountType: 1,
+        rating: 1,
+        numReviews: 1,
+        mainImage: 1, 
+    };
+}
 
 
-// 📁 controllers/products/pipeline/buildProductPipeline.js
 function buildProductPipeline({
     colorsArray = [],
     subcategoriesArray = [],
     search,
     priceMatch,
 }) {
+    const initialMatch = {
+        status: "active",
+    };
+
     const pipeline = [];
 
-    // 🟢 البحث بالنص
-    if (search) {
-        pipeline.push({
-            $match: { title: { $regex: search, $options: "i" } },
-        });
-    }
-
-    // 🟢 فلترة السعر
-    if (Object.keys(priceMatch).length > 0) {
-        pipeline.push({ $match: { price: priceMatch } });
-    }
-
-    // 🟢 جلب الفئة الفرعية
-    pipeline.push({
-        $lookup: {
-            from: "subcategories",
-            localField: "subcategory",
-            foreignField: "_id",
-            as: "subcategory",
-        },
-    });
-
-    pipeline.push({
-        $unwind: { path: "$subcategory", preserveNullAndEmptyArrays: true },
-    });
-
-    // 🟢 فلترة الفئة الفرعية
+    // 1. فلترة الفئة الفرعية (Subcategory)
     if (subcategoriesArray.length > 0) {
-        pipeline.push({
-            $match: {
-                $expr: {
-                    $in: [{ $toLower: "$subcategory.name" }, subcategoriesArray],
-                },
-            },
-        });
+        initialMatch.subcategory = { $in: subcategoriesArray };
+    }
+    
+    // 2. فلترة السعر
+    if (Object.keys(priceMatch).length > 0) {
+        initialMatch.price = priceMatch;
+    }
+    
+    // 3. فلترة الألوان - باستخدام حقل colorNames المجمع
+    if (colorsArray.length > 0) {
+        initialMatch.colorNames = { $in: colorsArray };
     }
 
-    // 🟢 جلب الـ variants بدون تكرار
+    // 4. البحث بالنص (Search)
+    if (search) {
+        initialMatch.$text = { $search: search };
+        pipeline.push({ $match: initialMatch });
+        // المرحلة الأولى: لتمكين الـ Score والحقول الأساسية
+        pipeline.push({ $project: { score: { $meta: "textScore" }, ...getProjectionFields() } });
+        pipeline.push({ $sort: { score: -1 } });
+    } else {
+        pipeline.push({ $match: initialMatch });
+    }
+
+    // 5. جلب معلومات الـ Variants (الألوان والصور)
     pipeline.push({
         $lookup: {
             from: "productvariants",
-            let: { productId: "$_id" },
+            localField: "_id",
+            foreignField: "productId",
+            as: "availableColors",
             pipeline: [
-                { $match: { $expr: { $eq: ["$productId", "$$productId"] } } },
+                // Lookup داخلي لجلب تفاصيل اللون باستخدام colorId
                 {
-                    $group: {
-                        _id: { color: { $toLower: "$color.name" } },
-                        variant: { $first: "$$ROOT" },
+                    $lookup: {
+                        from: "colors", 
+                        localField: "colorId", 
+                        foreignField: "_id",
+                        as: "colorDetails"
+                    }
+                },
+                { $unwind: "$colorDetails" }, 
+
+                {
+                    $project: {
+                        _id: 1,
+                        isDefault: 1,
+                        colorName: "$colorDetails.name",    
+                        colorValue: "$colorDetails.value",  
+                        mainImageUrl: { $arrayElemAt: ["$images.url", 0] },
+                        secondImageUrl: { $arrayElemAt: ["$images.url", 1] },
                     },
                 },
-                {
-                    $replaceRoot: { newRoot: "$variant" },
-                },
+                { $sort: { isDefault: -1 } } 
             ],
-            as: "variants",
         },
     });
 
-    // 🟢 فلترة الألوان (إن وجدت)
-    if (colorsArray.length > 0) {
-        pipeline.push({
-            $addFields: {
-                variants: {
-                    $filter: {
-                        input: "$variants",
-                        as: "v",
-                        cond: { $in: [{ $toLower: "$$v.color.name" }, colorsArray] },
-                    },
-                },
-            },
-        });
-    }
-
-    // 🟢 جلب أول صورتين فقط لكل variant
+    // 6. فك بيانات الصور الرئيسية للمنتج من الـ Variant الافتراضي
     pipeline.push({
         $addFields: {
-            variants: {
-                $map: {
-                    input: "$variants",
-                    as: "v",
-                    in: {
-                        _id: "$$v._id",
-                        color: { $toLower: "$$v.color.name" },
-                        mainImage: { $arrayElemAt: ["$$v.images.url", 0] },
-                        secondImage: { $arrayElemAt: ["$$v.images.url", 1] },
-                    },
-                },
-            },
-        },
+            mainImageUrl: { $arrayElemAt: ["$availableColors.mainImageUrl", 0] },
+            secondImageUrl: { $arrayElemAt: ["$availableColors.secondImageUrl", 0] },
+        }
     });
 
-    // 🟢 لو في فلترة بالألوان، نستبعد المنتجات اللي variants فاضية
-    if (colorsArray.length > 0) {
-        pipeline.push({
-            $match: {
-                variants: { $ne: [] },
-            },
-        });
+    // 7. مرحلة الإسقاط والتوحيد النهائي (باستخدام الإدراج فقط)
+    
+    // نجمع جميع الحقول المطلوبة النهائية
+    const finalProjection = {
+        ...getProjectionFields(),
+        mainImageUrl: 1,    
+        secondImageUrl: 1,
+        availableColors: 1, 
+    };
+
+    if (search) {
+        finalProjection.score = 1;
     }
 
-    // 🟢 إخراج الحقول المطلوبة فقط
-    pipeline.push({
-        $project: {
-            _id: 1,
-            title: 1,
-            price: 1,
-            rating: 1,
-            subcategory: "$subcategory.name",
-            variants: 1,
-        },
-    });
+    pipeline.push({ $project: finalProjection });
+
+    // 8. تنظيف خاص للبحث النصي: إزالة Score إذا تم إدراجه في الخطوة 7
+    if (search) {
+        pipeline.push({ $project: { score: 0 } });
+    }
 
     return pipeline;
 }

@@ -1,6 +1,6 @@
 const express = require("express");
 const asyncHandler = require("express-async-handler");
-const Subcategory = require("../models/subcategoryModel");
+const Subcategory = require("../models/subcategory/index");
 const redis = require("../config/redis");
 
 const router = express.Router();
@@ -110,9 +110,7 @@ router.delete(
     // 🧹 Clear Redis cache
     await redis.del("subcategories:all");
 
-    res
-      .status(200)
-      .json({ message: "Subcategory deleted successfully", id });
+    res.status(200).json({ message: "Subcategory deleted successfully", id });
   })
 );
 

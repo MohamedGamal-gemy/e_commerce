@@ -1,7 +1,14 @@
 // src/services/products.service.js
-const Product = require("../models/productModel");
-const { buildCacheKey, getCache, setCache } = require("./cache.service");
+// const Product = require("../models/productModel");
+// const { buildCacheKey, getCache, setCache } = require("./cache.service");
+const { getCache, setCache } = require("./cache.service");
 const { buildProductPipeline } = require("../utils/buildPipeline");
+
+// 
+const Product = require("../models/productModel");
+const mongoose = require("mongoose");
+// const { buildProductPipeline } = require("../utils/productPipelineBuilder");
+// 
 const { productSchema } = require("../validations/productValidation");
 const ProductVariant = require("../models/variantsModel");
 
@@ -19,7 +26,13 @@ async function getProductFacets(query) {
   if (minPrice) priceMatch.$gte = parseFloat(minPrice);
   if (maxPrice) priceMatch.$lte = parseFloat(maxPrice);
 
-  const cacheKey = buildCacheKey("facets", { color, subcategory, minPrice, maxPrice, search });
+  const cacheKey = buildCacheKey("facets", {
+    color,
+    subcategory,
+    minPrice,
+    maxPrice,
+    search,
+  });
   const cached = await getCache(cacheKey);
   if (cached) return cached;
 
@@ -36,15 +49,31 @@ async function getProductFacets(query) {
       $facet: {
         colors: [
           { $unwind: "$variants" },
-          { $group: { _id: { $toLower: "$variants.color.name" }, count: { $sum: 1 } } },
+          {
+            $group: {
+              _id: { $toLower: "$variants.color.name" },
+              count: { $sum: 1 },
+            },
+          },
           { $sort: { count: -1 } },
         ],
         subcategories: [
-          { $group: { _id: { $toLower: "$subcategory.name" }, count: { $sum: 1 } } },
+          {
+            $group: {
+              _id: { $toLower: "$subcategory.name" },
+              count: { $sum: 1 },
+            },
+          },
           { $sort: { count: -1 } },
         ],
         price: [
-          { $group: { _id: null, min: { $min: "$price" }, max: { $max: "$price" } } },
+          {
+            $group: {
+              _id: null,
+              min: { $min: "$price" },
+              max: { $max: "$price" },
+            },
+          },
         ],
       },
     },
@@ -52,9 +81,18 @@ async function getProductFacets(query) {
 
   const result = {
     facets: {
-      colors: (facetResult.colors || []).map((c) => ({ value: c._id, count: c.count })),
-      subcategories: (facetResult.subcategories || []).map((s) => ({ value: s._id, count: s.count })),
-      price: (facetResult.price && facetResult.price[0]) ? facetResult.price[0] : { min: 0, max: 0 },
+      colors: (facetResult.colors || []).map((c) => ({
+        value: c._id,
+        count: c.count,
+      })),
+      subcategories: (facetResult.subcategories || []).map((s) => ({
+        value: s._id,
+        count: s.count,
+      })),
+      price:
+        facetResult.price && facetResult.price[0]
+          ? facetResult.price[0]
+          : { min: 0, max: 0 },
     },
   };
 
@@ -62,7 +100,20 @@ async function getProductFacets(query) {
   return result;
 }
 
-async function getProducts(query) {
+// ################################################################
+/**
+ * @desc Get list of products with filtering, sorting, and pagination
+ * @route GET /api/v1/products
+ * @access Public
+ */
+
+/**
+ * @desc Get list of products with filtering, sorting, and pagination
+ * @param {object} query - Express request query parameters
+ * @returns {object} { products: [], pagination: {} }
+ */
+async function getProducts(query = {}) {
+  // 💡 التأكد من أن query هو كائن وتعيين القيم الافتراضية
   const {
     color,
     subcategory,
@@ -75,31 +126,22 @@ async function getProducts(query) {
   } = query;
 
   // 🟢 تجهيز الفلاتر
-  const colorsArray = color ? color.split(",").map((c) => c.trim().toLowerCase()) : [];
+  const colorsArray = color
+    ? color.split(",").map((c) => c.trim().toLowerCase())
+    : [];
+
+  // ⚠️ تحويل subcategory IDs
   const subcategoriesArray = subcategory
-    ? subcategory.split(",").map((s) => s.trim().toLowerCase())
+    ? subcategory.split(",").map((id) => mongoose.Types.ObjectId(id))
     : [];
 
   const priceMatch = {};
   if (minPrice) priceMatch.$gte = parseFloat(minPrice);
   if (maxPrice) priceMatch.$lte = parseFloat(maxPrice);
 
-  const skip = (Math.max(parseInt(page, 10), 1) - 1) * parseInt(limit, 10);
-
-  // 🧠 Cache
-  const cacheKey = buildCacheKey("products", {
-    color,
-    subcategory,
-    minPrice,
-    maxPrice,
-    search,
-    sort,
-    page,
-    limit,
-  });
-
-  const cached = await getCache(cacheKey);
-  if (cached) return cached;
+  const parsedLimit = parseInt(limit, 10);
+  const parsedPage = parseInt(page, 10);
+  const skip = (Math.max(parsedPage, 1) - 1) * parsedLimit;
 
   // 🧱 بناء الـ pipeline
   const pipelineBase = buildProductPipeline({
@@ -118,170 +160,249 @@ async function getProducts(query) {
         return { price: -1 };
       case "top_rated":
         return { rating: -1 };
+      case "most_viewed":
+        return { views: -1 };
+      case "top_sales":
+        return { purchases: -1 };
       default:
-        return { createdAt: -1 };
+        return { createdAt: -1 }; // latest
     }
   })();
 
-  // 📊 إجمالي النتائج
-  const totalCountAgg = await Product.aggregate([...pipelineBase, { $count: "total" }]);
+  // 1. إجمالي النتائج (Total Count)
+  // 💡 نستخدم فقط مراحل $match الأساسية للعد للحصول على أداء أفضل
+  const matchStages = pipelineBase.filter(
+    (stage) => stage.$match || (stage.$project && stage.$project.score)
+  );
+
+  const totalCountAgg = await Product.aggregate([
+    ...matchStages,
+    { $count: "total" },
+  ]);
+
   const total = totalCountAgg[0]?.total || 0;
 
-  // 🧩 إضافة الـ pagination
+  // 2. إضافة الترتيب والـ Pagination
   const finalPipeline = [
     ...pipelineBase,
-    { $sort: sortStage },
+    // إذا كان هناك بحث نصي، الترتيب بالـ score يتم أولاً. وإلا نستخدم الترتيب المطلوب.
+    ...(search ? [] : [{ $sort: sortStage }]),
+
     { $skip: skip },
-    { $limit: parseInt(limit, 10) },
+    { $limit: parsedLimit },
   ];
 
   const products = await Product.aggregate(finalPipeline);
 
-  // 🧾 النتيجة النهائية
+  // 3. إرجاع النتيجة النهائية
   const response = {
     products,
     pagination: {
       total,
-      page: parseInt(page, 10),
-      limit: parseInt(limit, 10),
-      totalPages: Math.ceil(total / parseInt(limit, 10)),
+      page: parsedPage,
+      limit: parsedLimit,
+      totalPages: Math.ceil(total / parsedLimit),
     },
   };
 
-  // 🧠 حفظ الكاش
-  await setCache(cacheKey, response, 60);
-
   return response;
-}
+} // ################################################################
 
-// exports.createProductService = async (req) => {
-//   let payload;
-//   try {
-//     payload = JSON.parse(req.body.payload);
-//   } catch {
-//     throw new Error("Invalid payload format");
-//   }
+// async function getProducts(query) {
+//   const {
+//     color,
+//     subcategory,
+//     minPrice,
+//     maxPrice,
+//     search,
+//     sort = "latest",
+//     page = 1,
+//     limit = 9,
+//   } = query;
 
-//   // ✅ إنشاء المنتج الرئيسي
-//   const product = new Product({
-//     title: payload.title,
-//     description: payload.description,
-//     price: payload.price,
-//     category: payload.category,
-//     subcategory: payload.subcategory,
+//   // 🟢 تجهيز الفلاتر
+//   const colorsArray = color ? color.split(",").map((c) => c.trim().toLowerCase()) : [];
+//   const subcategoriesArray = subcategory
+//     ? subcategory.split(",").map((s) => s.trim().toLowerCase())
+//     : [];
+
+//   const priceMatch = {};
+//   if (minPrice) priceMatch.$gte = parseFloat(minPrice);
+//   if (maxPrice) priceMatch.$lte = parseFloat(maxPrice);
+
+//   const skip = (Math.max(parseInt(page, 10), 1) - 1) * parseInt(limit, 10);
+
+//   // 🧠 Cache
+//   const cacheKey = buildCacheKey("products", {
+//     color,
+//     subcategory,
+//     minPrice,
+//     maxPrice,
+//     search,
+//     sort,
+//     page,
+//     limit,
 //   });
 
-//   // ✅ التعامل مع الصور
-//   const { files } = req;
-//   if (files && files.length > 0) {
-//     const variantIndexes = JSON.parse(req.body.variantIndexes || "[]");
+//   const cached = await getCache(cacheKey);
+//   if (cached) return cached;
 
-//     files.forEach((file, idx) => {
-//       const variantIndex = variantIndexes[idx];
-//       if (payload.variants[variantIndex]) {
-//         payload.variants[variantIndex].images.push({
-//           url: file.path,
-//           publicId: file.filename, // لو Cloudinary
-//         });
-//       }
-//     });
-//   }
+//   // 🧱 بناء الـ pipeline
+//   const pipelineBase = buildProductPipeline({
+//     colorsArray,
+//     subcategoriesArray,
+//     search,
+//     priceMatch,
+//   });
 
-//   // ✅ إنشاء الـ Variants وربطها بالـ Product
-//   await product.save();
+//   // 📊 الترتيب
+//   const sortStage = (() => {
+//     switch (sort) {
+//       case "price_asc":
+//         return { price: 1 };
+//       case "price_desc":
+//         return { price: -1 };
+//       case "top_rated":
+//         return { rating: -1 };
+//       default:
+//         return { createdAt: -1 };
+//     }
+//   })();
 
-//   await Promise.all(
-//     payload.variants.map(async (variant) => {
-//       await ProductVariant.create({
-//         productId: product._id,
-//         color: variant.color,
-//         sizes: variant.sizes,
-//         images: variant.images,
-//       });
-//     })
-//   );
+//   // 📊 إجمالي النتائج
+//   const totalCountAgg = await Product.aggregate([...pipelineBase, { $count: "total" }]);
+//   const total = totalCountAgg[0]?.total || 0;
 
-//   return product;
-// };
+//   // 🧩 إضافة الـ pagination
+//   const finalPipeline = [
+//     ...pipelineBase,
+//     { $sort: sortStage },
+//     { $skip: skip },
+//     { $limit: parseInt(limit, 10) },
+//   ];
+
+//   const products = await Product.aggregate(finalPipeline);
+
+//   // 🧾 النتيجة النهائية
+//   const response = {
+//     products,
+//     pagination: {
+//       total,
+//       page: parseInt(page, 10),
+//       limit: parseInt(limit, 10),
+//       totalPages: Math.ceil(total / parseInt(limit, 10)),
+//     },
+//   };
+
+//   // 🧠 حفظ الكاش
+//   await setCache(cacheKey, response, 60);
+
+//   return response;
+// }
 
 // services/products.service.js
-async function createProductService(req) {
-  let payload;
-  try {
-    payload = JSON.parse(req.body.payload);
-  } catch {
-    throw new Error("Invalid payload format");
-  }
+// const Product = require("../models/productModel");
+// const mongoose = require("mongoose");
+// const { buildProductPipeline } = require("../utils/productPipelineBuilder"); 
 
-  // ✅ 1. التحقق من صحة البيانات باستخدام Joi
-  const { error, value } = productSchema.validate(payload, {
-    abortEarly: false, // يرجع كل الأخطاء مرة واحدة
-    stripUnknown: true, // يحذف أي بيانات غير معرفة في الـschema
-  });
+/**
+ * @desc Get list of products with filtering, sorting, and pagination
+ * @param {object} query - Express request query parameters
+ * @returns {object} { products: [], pagination: {} }
+ */
+async function getProducts(query = {}) { 
+    
+    // 💡 فك محتويات الـ query مع القيم الافتراضية
+    const {
+        color,
+        subcategory,
+        minPrice,
+        maxPrice,
+        search,
+        sort = "latest",
+        page = 1,
+        limit = 9,
+    } = query;
 
-  if (error) {
-    const messages = error.details.map((e) => e.message).join(", ");
-    const err = new Error(`Validation failed: ${messages}`);
-    err.statusCode = 400;
-    throw err;
-  }
+    // 🟢 تجهيز الفلاتر
+    const colorsArray = color
+        ? color.split(",").map((c) => c.trim().toLowerCase())
+        : [];
+    
+    const subcategoriesArray = subcategory
+        ? subcategory.split(",").map((id) => mongoose.Types.ObjectId(id))
+        : [];
+    
+    const priceMatch = {};
+    if (minPrice) priceMatch.$gte = parseFloat(minPrice);
+    if (maxPrice) priceMatch.$lte = parseFloat(maxPrice);
 
-  // ✅ 2. إنشاء المنتج الأساسي
-  const product = new Product({
-    title: value.title,
-    description: value.description,
-    price: value.price,
-    category: value.category,
-    subcategory: value.subcategory,
-  });
+    const parsedLimit = parseInt(limit, 10);
+    const parsedPage = parseInt(page, 10);
+    const skip = (Math.max(parsedPage, 1) - 1) * parsedLimit;
 
-  // ✅ 3. ربط الصور بالـvariants (إن وجدت)
-  const { files } = req;
-  if (files && files.length > 0) {
-    const variantIndexes = JSON.parse(req.body.variantIndexes || "[]");
 
-    files.forEach((file, idx) => {
-      const variantIndex = variantIndexes[idx];
-      if (value.variants[variantIndex]) {
-        value.variants[variantIndex].images.push({
-          url: file.path,
-          publicId: file.filename, // أو secure_url من Cloudinary
-        });
-      }
+    // 🧱 بناء الـ pipeline
+    const pipelineBase = buildProductPipeline({
+        colorsArray,
+        subcategoriesArray,
+        search,
+        priceMatch,
     });
-  }
 
-  // ✅ 4. حفظ المنتج أولاً
-  await product.save();
+    // 📊 الترتيب
+    const sortStage = (() => {
+        switch (sort) {
+            case "price_asc": return { price: 1 };
+            case "price_desc": return { price: -1 };
+            case "top_rated": return { rating: -1 };
+            case "most_viewed": return { views: -1 };
+            case "top_sales": return { purchases: -1 };
+            default: return { createdAt: -1 }; // latest
+        }
+    })();
 
-  // ✅ 5. إنشاء الـvariants وربطها بالمنتج
-  const variantIds = await Promise.all(
-    value.variants.map(async (variant) => {
-      const newVariant = await ProductVariant.create({
-        productId: product._id,
-        color: variant.color,
-        sizes: variant.sizes,
-        images: variant.images,
-      });
-      return newVariant._id;
-    })
-  );
+    // 1. إجمالي النتائج (Total Count) - يتم استخدام مراحل $match فقط
+    const matchStages = pipelineBase.filter(stage => 
+        stage.$match || (stage.$project && stage.$project.score) 
+    );
+    
+    const totalCountAgg = await Product.aggregate([
+        ...matchStages,
+        { $count: "total" },
+    ]);
+    
+    const total = totalCountAgg[0]?.total || 0;
 
-  // ✅ 6. ربط الـvariants بالمنتج وتحديثه
-  product.variants = variantIds;
-  await product.save();
+    // 2. إضافة الترتيب والـ Pagination
+    const finalPipeline = [
+        ...pipelineBase,
+        // إضافة الترتيب إذا لم يكن بحثاً نصياً
+        ...(search ? [] : [{ $sort: sortStage }]), 
+        
+        { $skip: skip },
+        { $limit: parsedLimit },
+    ];
 
-  // ✅ 7. النتيجة النهائية
-  return {
-    message: "Product created successfully",
-    product,
-  };
+    const products = await Product.aggregate(finalPipeline);
+
+    // 3. إرجاع النتيجة النهائية
+    const response = {
+        products,
+        pagination: {
+            total,
+            page: parsedPage,
+            limit: parsedLimit,
+            totalPages: Math.ceil(total / parsedLimit),
+        },
+    };
+
+    return response; 
 }
-
 
 
 module.exports = {
-  createProductService,
+  // createProductService,
   getProductFacets,
   getProducts,
 };
