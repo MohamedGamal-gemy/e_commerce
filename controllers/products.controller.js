@@ -1,4 +1,6 @@
 const Product = require("../models/product");
+const mongoose = require("mongoose");
+const ProductType = require("../models/productType");
 const ProductVariant = require("../models/productVariant");
 const ApiError = require("../utils/ApiError");
 const ApiResponse = require("../utils/ApiResponse");
@@ -29,7 +31,7 @@ exports.createProduct = asyncHandler(async (req, res, next) => {
   const { error, value } = createProductSchema.validate(req.body, {
     abortEarly: false,
   });
-  
+
   if (error) {
     const errorMessages = error.details.map((detail) => detail.message).join(", ");
     return next(new ApiError(`Validation error: ${errorMessages}`, 400));
@@ -73,33 +75,36 @@ exports.createProduct = asyncHandler(async (req, res, next) => {
  * @route GET /api/products
  * @access Public
  */
-exports.getProducts = asyncHandler(async (req, res, next) => {
-  const { color, subcategory, status, minPrice, maxPrice, search, page = 1, limit = 20 } = req.query;
-  
-  // Build filter object
+exports.getProducts = asyncHandler(async (req, res) => {
+  const {
+    color,
+    productTypeName, // ✅ Now we filter by name, not ID
+    status,
+    minPrice,
+    maxPrice,
+    search,
+    page = 1,
+    limit = 20,
+  } = req.query;
+
   const filter = {};
-  
-  // Status filter (default to active if not specified)
-  if (status) {
-    filter.status = status;
-  } else {
-    filter.status = "active";
-    filter.isAvailable = true;
+  filter.status = status || "active";
+  filter.isAvailable = true;
+
+  // 💡 Filter by productTypeName (comma separated)
+  if (productTypeName) {
+    const typeNames = productTypeName.split(",").map((n) => n.trim());
+    filter.productTypeName = typeNames;
   }
 
-  // Subcategory filter
-  if (subcategory) {
-    filter.subcategory = subcategory;
-  }
-
-  // Price range filter
+  // 💰 Price range filter
   if (minPrice || maxPrice) {
     filter.price = {};
     if (minPrice) filter.price.$gte = Number(minPrice);
     if (maxPrice) filter.price.$lte = Number(maxPrice);
   }
 
-  // Color filter - query variants first
+  // 🎨 Color filter (via ProductVariant)
   if (color) {
     const variantProductIds = await ProductVariant.find({
       "color.name": { $regex: new RegExp(`^${color}$`, "i") },
@@ -108,41 +113,28 @@ exports.getProducts = asyncHandler(async (req, res, next) => {
     if (variantProductIds.length > 0) {
       filter._id = { $in: variantProductIds };
     } else {
-      // No products found with this color
-      return res.json({ 
-        count: 0, 
-        products: [],
-        page: Number(page),
-        limit: Number(limit),
-        totalPages: 0,
-      });
+      return res.json({ count: 0, products: [], page, limit, totalPages: 0 });
     }
   }
 
-  // Search filter
-  if (search) {
-    filter.$text = { $search: search };
-  }
+  // 🔍 Search text
+  if (search) filter.$text = { $search: search };
 
-  // Pagination
+  // 📄 Pagination options
   const pageNum = Math.max(1, Number(page));
   const limitNum = Math.max(1, Math.min(100, Number(limit)));
   const skip = (pageNum - 1) * limitNum;
 
-  // Query options
-  const queryOptions = {
+  const options = {
     sort: { createdAt: -1 },
     skip,
     limit: limitNum,
-      select: "title price slug rating numReviews   isAvailable",
+    select: "title price slug rating numReviews totalStock status isAvailable",
   };
 
-  // Query products with caching (cache-aside pattern)
-  // Note: Text search score sorting is handled automatically in the aggregate pipeline
-  const [products, total] = await Promise.all([
-    ProductCacheService.getProductsWithCache(filter, queryOptions),
-    ProductCacheService.getProductsCountWithCache(filter),
-  ]);
+  // 🚀 Use the static method
+  const products = await Product.getProductsWithColorPreviews(filter, options);
+  const total = products.length; // (You can use countDocuments if you want total count)
 
   res.json({
     count: products.length,
@@ -177,7 +169,7 @@ exports.updateProduct = asyncHandler(async (req, res, next) => {
   const { error, value } = updateProductSchema.validate(req.body, {
     abortEarly: false,
   });
-  
+
   if (error) {
     const errorMessages = error.details.map((detail) => detail.message).join(", ");
     return next(new ApiError(`Validation error: ${errorMessages}`, 400));
@@ -186,8 +178,8 @@ exports.updateProduct = asyncHandler(async (req, res, next) => {
   const { variants, ...productData } = value;
 
   // 3️⃣ Group uploaded files by fieldname (if any)
-  const filesByField = req.files && req.files.length > 0 
-    ? groupFilesByField(req.files) 
+  const filesByField = req.files && req.files.length > 0
+    ? groupFilesByField(req.files)
     : {};
 
   // 4️⃣ Update product and variants using service
@@ -238,7 +230,7 @@ exports.patchProduct = asyncHandler(async (req, res, next) => {
   const { error, value } = updateProductSchema.validate(req.body, {
     abortEarly: false,
   });
-  
+
   if (error) {
     const errorMessages = error.details.map((detail) => detail.message).join(", ");
     return next(new ApiError(`Validation error: ${errorMessages}`, 400));
@@ -252,8 +244,8 @@ exports.patchProduct = asyncHandler(async (req, res, next) => {
   const { variants, ...productData } = value;
 
   // 4️⃣ Group uploaded files by fieldname (if any)
-  const filesByField = req.files && req.files.length > 0 
-    ? groupFilesByField(req.files) 
+  const filesByField = req.files && req.files.length > 0
+    ? groupFilesByField(req.files)
     : {};
 
   // 5️⃣ Update product and variants using service (only provided fields)

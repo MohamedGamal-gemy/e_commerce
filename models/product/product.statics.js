@@ -120,19 +120,17 @@ module.exports = (schema) => {
       limit = 20,
       select = "title price slug rating numReviews totalStock status isAvailable",
     } = options;
-
+  
     const ProductVariant = mongoose.model("ProductVariant");
-
+  
     try {
-      // Handle text search score if needed
       const hasTextSearch = !!filter.$text;
-
-      // Build aggregation pipeline
+      const productTypeNames = filter.productTypeName || [];
+      delete filter.productTypeName; // نشيله من الفلتر الأساسي
+  
       const pipeline = [
-        // 1️⃣ Match products based on filter
         { $match: filter },
-
-        // 1.5️⃣ Add text search score if needed
+  
         ...(hasTextSearch
           ? [
               {
@@ -142,25 +140,30 @@ module.exports = (schema) => {
               },
             ]
           : []),
-
-        // 2️⃣ Lookup ProductType to get name directly (avoid populate)
+  
+        // Lookup ProductType
         {
           $lookup: {
             from: "producttypes",
             localField: "productType",
             foreignField: "_id",
             as: "productTypeData",
-            pipeline: [
-              {
-                $project: {
-                  name: 1,
-                },
-              },
-            ],
+            pipeline: [{ $project: { name: 1 } }],
           },
         },
-
-        // 2.5️⃣ Lookup variants to get color previews
+  
+        // لو فيه فلترة على productTypeName نعمل match بعد lookup
+        ...(productTypeNames.length > 0
+          ? [
+              {
+                $match: {
+                  "productTypeData.name": { $in: productTypeNames },
+                },
+              },
+            ]
+          : []),
+  
+        // Lookup variants for color previews
         {
           $lookup: {
             from: "productvariants",
@@ -175,14 +178,12 @@ module.exports = (schema) => {
                   isDefault: 1,
                 },
               },
-              {
-                $sort: { isDefault: -1 }, // Default variant first
-              },
+              { $sort: { isDefault: -1 } },
             ],
           },
         },
-
-        // 3️⃣ Add colorPreviews and productTypeName fields
+  
+        // Add computed fields
         {
           $addFields: {
             colorPreviews: {
@@ -191,85 +192,53 @@ module.exports = (schema) => {
                 as: "variant",
                 in: {
                   color: "$$variant.color",
-                  previewImage: {
-                    $ifNull: ["$$variant.firstImage.url", null],
-                  },
+                  previewImage: { $ifNull: ["$$variant.firstImage.url", null] },
                 },
               },
             },
             productTypeName: {
-              $ifNull: [
-                { $arrayElemAt: ["$productTypeData.name", 0] },
-                null,
-              ],
+              $ifNull: [{ $arrayElemAt: ["$productTypeData.name", 0] }, null],
             },
           },
         },
-
-        // 4️⃣ Add selected fields and remove variants/productTypeData arrays
+  
         {
           $project: (() => {
             const projection = {
               colorPreviews: 1,
               productTypeName: 1,
             };
-            
-            // Add text search score if present
-            if (hasTextSearch) {
-              projection.score = 1;
-            }
-            
-            // Add selected fields (exclude variants and productTypeData from select)
+  
+            if (hasTextSearch) projection.score = 1;
             if (select) {
               select.split(" ").forEach((field) => {
-                if (field && field.trim() && field !== "variants" && field !== "productTypeData") {
+                if (
+                  field &&
+                  field.trim() &&
+                  field !== "variants" &&
+                  field !== "productTypeData"
+                ) {
                   projection[field.trim()] = 1;
                 }
               });
             }
-            
-            // Note: variants and productTypeData arrays are automatically excluded
-            // Don't add variants: 0 or productTypeData: 0 because it causes conflict with inclusion projection
-            
             return projection;
           })(),
         },
-
-        // 6️⃣ Sort (handle text search score sorting)
-        {
-          $sort: (() => {
-            if (hasTextSearch && sort.score) {
-              // If text search, prioritize score
-              const sortObj = { score: -1 };
-              Object.keys(sort).forEach((key) => {
-                if (key !== "score") sortObj[key] = sort[key];
-              });
-              return sortObj;
-            }
-            return sort;
-          })(),
-        },
-
-        // 7️⃣ Pagination
+  
+        { $sort: sort },
         { $skip: skip },
         { $limit: limit },
       ];
-
+  
       const products = await this.aggregate(pipeline);
-      
-      // Remove score field from final results if it was added
-      if (hasTextSearch) {
-        products.forEach((product) => {
-          delete product.score;
-        });
-      }
-      
       return products;
     } catch (error) {
       console.error("❌ Error in getProductsWithColorPreviews:", error);
       throw error;
     }
   };
+  
 
   /**
    * Get single product with color previews (optimized)
