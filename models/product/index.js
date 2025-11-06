@@ -1,7 +1,7 @@
 const mongoose = require("mongoose");
 const ProductSchema = require("./product.schema");
 
-// Attach extensions
+// Attach helpers
 require("./product.virtuals")(ProductSchema);
 require("./product.statics")(ProductSchema);
 require("./product.hooks")(ProductSchema);

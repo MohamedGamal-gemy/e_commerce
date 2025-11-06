@@ -1,17 +1,14 @@
 const mongoose = require("mongoose");
 
-// --- Product Schema 🛍️ ---
 const ProductSchema = new mongoose.Schema(
   {
     // Basic Info
-    // title: { type: String, required: true, trim: true, index: true },
     title: { type: String, required: true, trim: true },
-    slug: { type: String, lowercase: true, unique: true, sparse: true },
+    slug: { type: String, lowercase: true },
     description: { type: String, required: true },
-    shortDescription: { type: String, trim: true },
 
     // IDs & Pricing
-    sku: { type: String, trim: true, index: true },
+    sku: { type: String, trim: true },
     price: { type: Number, required: true, min: 0 },
     originalPrice: { type: Number, min: 0 },
 
@@ -26,33 +23,19 @@ const ProductSchema = new mongoose.Schema(
     discountEnd: Date,
     discountIsActive: { type: Boolean, default: false },
 
-    // Category
-    category: {
+    productType: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "Category",
+      ref: "ProductType",
+      index: true,
       required: true,
-      index: true,
-    },
-    subcategory: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Subcategory",
-      index: true,
     },
 
-    // Images
-    // mainImage: {
-    //   // url: { type: String, required: true, trim: true },
-    //   url: { type: String, trim: true },
-    //   publicId: String,
-    //   alt: String,
-    // },
-
-    // Variants aggregate
+    // Variants
     variants: [{ type: mongoose.Schema.Types.ObjectId, ref: "ProductVariant" }],
+
     numVariants: { type: Number, default: 0 },
     totalStock: { type: Number, default: 0, index: true },
     isAvailable: { type: Boolean, default: true },
-    colorNames: [{ type: String, index: true }],
 
     // Rating
     rating: { type: Number, default: 0, min: 0, max: 5 },
@@ -95,5 +78,8 @@ const ProductSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
+
+ProductSchema.set("toJSON", { virtuals: true });
+ProductSchema.set("toObject", { virtuals: true });
 
 module.exports = ProductSchema;

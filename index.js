@@ -16,7 +16,7 @@ const app = express();
 // ✅ Connect to DB
 connectToDB();
 
-app.use("/webhook", require("./routes/stripeWebhook"));
+// app.use("/webhook", require("./routes/stripeWebhook"));
 
 // ✅ Middlewares
 app.use(express.json());
@@ -70,12 +70,10 @@ const loginLimiter = rateLimit({
 // app.use("/api/stripe", require("./routes/stripe"));
 app.use("/api/address", require("./routes/addressRoutes"));
 app.use("/api/products", require("./routes/productFilter"));
+app.use("/api/product-types", require("./routes/productType.route"));
 // app.use("/api/orders", require("./routes/order"));
-app.use("/api/cart", require("./routes/cart"));
+// app.use("/api/cart", require("./routes/cart"));
 app.use("/api/checkout", require("./routes/checkout"));
-app.use("/api/variants", require("./routes/variantsRouter"));
-app.use("/api/categories", require("./routes/categoriesRoutes"));
-app.use("/api/subcategories", require("./routes/subcategoriesRoutes"));
 app.use("/api/users", require("./routes/userRoutes"));
 app.use("/api/products", require("./routes/products"));
 app.use("/api/reviews", require("./routes/reviewRoutes"));

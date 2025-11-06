@@ -39,10 +39,8 @@ function buildProductPipeline({
         initialMatch.price = priceMatch;
     }
     
-    // 3. فلترة الألوان - باستخدام حقل colorNames المجمع
-    if (colorsArray.length > 0) {
-        initialMatch.colorNames = { $in: colorsArray };
-    }
+    // 3. فلترة الألوان - سيتم التعامل معها بعد lookup على variants
+    // Note: colorNames field removed - filtering will be done via variant lookup
 
     // 4. البحث بالنص (Search)
     if (search) {
@@ -63,23 +61,11 @@ function buildProductPipeline({
             foreignField: "productId",
             as: "availableColors",
             pipeline: [
-                // Lookup داخلي لجلب تفاصيل اللون باستخدام colorId
-                {
-                    $lookup: {
-                        from: "colors", 
-                        localField: "colorId", 
-                        foreignField: "_id",
-                        as: "colorDetails"
-                    }
-                },
-                { $unwind: "$colorDetails" }, 
-
                 {
                     $project: {
                         _id: 1,
                         isDefault: 1,
-                        colorName: "$colorDetails.name",    
-                        colorValue: "$colorDetails.value",  
+                        color: 1,
                         mainImageUrl: { $arrayElemAt: ["$images.url", 0] },
                         secondImageUrl: { $arrayElemAt: ["$images.url", 1] },
                     },
@@ -88,6 +74,23 @@ function buildProductPipeline({
             ],
         },
     });
+
+    // 5.5. فلترة الألوان بعد lookup (إذا كانت موجودة)
+    // Note: colorNames field removed - filtering is done via variant lookup
+    if (colorsArray.length > 0) {
+        pipeline.push({
+            $match: {
+                "availableColors": {
+                    $elemMatch: {
+                        "color.name": {
+                            $regex: colorsArray.join("|"),
+                            $options: "i"
+                        }
+                    }
+                }
+            }
+        });
+    }
 
     // 6. فك بيانات الصور الرئيسية للمنتج من الـ Variant الافتراضي
     pipeline.push({

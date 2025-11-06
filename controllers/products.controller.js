@@ -1,222 +1,301 @@
-// // src/controllers/products.controller.js
-// const asyncHandler = require("express-async-handler");
-// const {
-//   getProducts,
-//   getProductFacets,
-// } = require("../services/products.service");
-// // const { getProductFacets, getProducts } = require("../services/products.service");
-// const { createProductService } = require("../services/poducts.create.service");
-
-// exports.facets = asyncHandler(async (req, res) => {
-//   const data = await getProductFacets(req.query);
-//   res.json(data);
-// });
-
-// // exports.show = asyncHandler(async (req, res) => {
-// //     const data = await getProducts(req.query);
-// //     res.json(data);
-// // });
-
-// exports.show = asyncHandler(async (req, res) => {
-//   // 1. استدعاء دالة الخدمة وتمرير req.query
-//   const data = await getProducts(req.query);
-
-//   // 2. إرسال الرد HTTP
-//   res.status(200).json({
-//     status: "success",
-//     ...data,
-//   });
-// });
-// // const { createProductService } = require("../services/products.service");
-
-// // exports.createProduct = async (req, res) => {
-// //     const data = await createProductService(req);
-// //     res.status(201).json({
-// //         message: "Product created successfully",
-// //         product: data,
-// //     });
-// // };
-// //
-
-// // ... getProductsController (الدالة القديمة) ...
-
-// /**
-//  * @desc Create a new product (Admin route)
-//  * @route POST /api/v1/products
-//  * @access Private/Admin
-//  */
-// exports.createProduct = asyncHandler(async (req, res) => {
-//   // 💡 افتراض أنك تستخدم Multer لجمع الـ Files في req.files أو req.body.files
-
-//   // 1. إعادة هيكلة البيانات القادمة من req.body/req.files
-//   const productData = req.body;
-
-//   // ⚠️ يجب فك محتويات الـ Variants والـ Files بشكل صحيح هنا
-//   // إذا كنت تستخدم multer، ستكون الـ Files متاحة كـ req.files
-
-//   // مثال مبسط لفك الـ JSON وتحويله إلى صيغة سهلة للمعالجة:
-//   const variantsData = JSON.parse(productData.variants || "[]");
-
-//   const finalProductData = {
-//     ...productData,
-//     // إرفاق ملفات الـ Variants المحلية
-//     variants: variantsData.map((variant, index) => ({
-//       ...variant,
-//       // ⚠️ هنا يجب ربط ملفات الصور بالـ Variant الصحيح بناءً على المنطق الذي تستخدمه في Multer
-//       imageFiles: req.files[`variants[${index}].imageFiles`] || [],
-//       isDefault: variant.isDefault === "true", // تحويل السلسلة إلى بوليان
-//       sizes: variant.sizes ? JSON.parse(variant.sizes) : [],
-//     })),
-//     // إرفاق ملف الصورة الرئيسية (إذا كانت منفصلة)
-//     mainImageFile: req.files["mainImageFile"]
-//       ? req.files["mainImageFile"][0]
-//       : null,
-//   };
-
-//   // 2. استدعاء دالة الخدمة
-//   const createdProduct = await createProductService(finalProductData);
-
-//   // 3. إرسال الرد HTTP
-//   res.status(201).json({
-//     status: "success",
-//     product: createdProduct,
-//     message: "Product and its variants created successfully.",
-//   });
-// });
-
-
-
-const cloudinary = require("../config/cloudinary");
 const Product = require("../models/product");
 const ProductVariant = require("../models/productVariant");
-const mongoose = require("mongoose");
 const ApiError = require("../utils/ApiError");
 const ApiResponse = require("../utils/ApiResponse");
 const asyncHandler = require("../utils/catchAsync");
+const { createProductSchema, updateProductSchema } = require("../validations/productValidation");
+const { groupFilesByField } = require("../utils/file.utils");
+const { createProductAndVariants, updateProductAndVariants, deleteProductAndVariants } = require("../services/product.service");
+const ProductCacheService = require("../services/productCache.service");
 
-// helper for promise-based upload
-const uploadImage = (buffer, folder) =>
-  new Promise((resolve, reject) => {
-    const stream = cloudinary.uploader.upload_stream({ folder }, (err, result) => {
-      if (err) reject(err);
-      else resolve(result);
-    });
-    stream.end(buffer);
-  });
-
+/**
+ * @desc Create a new product with variants
+ * @route POST /api/products
+ * @access Private/Admin
+ */
 exports.createProduct = asyncHandler(async (req, res, next) => {
-  const {
-    title,
-    description,
-    shortDescription,
-    price,
-    originalPrice,
-    category,
-    subcategory,
-    sku,
-    tags,
-    colorOptions,
-    sizeOptions,
-    isFeatured,
-    variants,
-  } = req.body;
-
-  if (!variants) return next(new ApiError("Variants data is required", 400));
-
-  let parsedVariants;
-  try {
-    parsedVariants = JSON.parse(variants);
-  } catch (err) {
-    return next(new ApiError("Invalid variants format", 400));
-  }
-
-  if (!req.files || !req.files.length) {
-    return next(new ApiError("No images uploaded", 400));
-  }
-
-  // 🧩 Step 1: Group files by fieldname
-  const filesByField = {};
-  for (const f of req.files) {
-    if (!filesByField[f.fieldname]) filesByField[f.fieldname] = [];
-    filesByField[f.fieldname].push(f);
-  }
-
-  // 🖼️ Step 2: Upload main image
-  // const mainFiles = filesByField["mainImage"];
-  // if (!mainFiles || !mainFiles.length)
-  //   return next(new ApiError("Main image is required", 400));
-
-  // const mainUpload = await uploadImage(mainFiles[0].buffer, "products/main");
-
-  // 🧩 Step 3: Upload variant images
-  for (let i = 0; i < parsedVariants.length; i++) {
-    const fieldKey = `variantImages_${i}`;
-    const variantImages = filesByField[fieldKey] || [];
-    const uploaded = [];
-
-    for (const img of variantImages) {
-      const up = await uploadImage(img.buffer, `products/variants/${title || "item"}`);
-      uploaded.push({ url: up.secure_url, publicId: up.public_id });
+  // 1️⃣ Parse variants if it's a string
+  if (req.body.variants && typeof req.body.variants === "string") {
+    try {
+      req.body.variants = JSON.parse(req.body.variants);
+    } catch (parseError) {
+      return next(
+        new ApiError("Invalid variants JSON format: " + parseError.message, 400)
+      );
     }
-
-    parsedVariants[i].images = uploaded;
   }
 
-  // 🧱 Step 4: Save to DB (transaction)
-  const session = await mongoose.startSession();
-  session.startTransaction();
-
-  try {
-    const [product] = await Product.create(
-      [
-        {
-          title,
-          description,
-          shortDescription,
-          price,
-          originalPrice,
-          category,
-          subcategory,
-          sku,
-          tags,
-          colorOptions,
-          sizeOptions,
-          isFeatured,
-          // mainImage: {
-          //   url: mainUpload.secure_url,
-          //   publicId: mainUpload.public_id,
-          // },
-        },
-      ],
-      { session }
-    );
-
-    // variants
-    const variantDocs = parsedVariants.map((v) => ({
-      productId: product._id,
-      sku: v.sku,
-      color: v.color,
-      sizes: v.sizes,
-      images: v.images,
-      isDefault: !!v.isDefault,
-    }));
-
-    const createdVariants = await ProductVariant.insertMany(variantDocs, { session });
-    const variantIds = createdVariants.map((v) => v._id);
-
-    await Product.findByIdAndUpdate(product._id, { $set: { variants: variantIds } }, { session });
-
-    if (Product.recalcAggregates) await Product.recalcAggregates(product._id);
-
-    await session.commitTransaction();
-
-    const populated = await Product.findById(product._id).populate("variants");
-    res.status(201).json(new ApiResponse(201, populated, "✅ Product created successfully"));
-  } catch (err) {
-    await session.abortTransaction();
-    console.error(err);
-    next(new ApiError("Failed to create product", 500));
-  } finally {
-    session.endSession();
+  // 2️⃣ Validate request data
+  const { error, value } = createProductSchema.validate(req.body, {
+    abortEarly: false,
+  });
+  
+  if (error) {
+    const errorMessages = error.details.map((detail) => detail.message).join(", ");
+    return next(new ApiError(`Validation error: ${errorMessages}`, 400));
   }
+
+  const { variants, ...productData } = value;
+
+  // 3️⃣ Check if images are uploaded
+  if (!req.files || !req.files.length) {
+    return next(new ApiError("No images uploaded. At least one image is required.", 400));
+  }
+
+  // 4️⃣ Group uploaded files by fieldname
+  const filesByField = groupFilesByField(req.files);
+
+  // 5️⃣ Create product and variants using service
+  const newProductId = await createProductAndVariants(
+    productData,
+    variants,
+    filesByField
+  );
+
+  // 6️⃣ Invalidate cache after creating new product
+  await ProductCacheService.invalidateCache();
+
+  // 7️⃣ Fetch and return the created product with populated variants
+  const populatedProduct = await Product.findById(newProductId)
+    .populate("variants")
+    .populate("productType", "name");
+
+  if (!populatedProduct) {
+    return next(new ApiError("Product was created but could not be retrieved", 500));
+  }
+
+  res.status(201).json(
+    new ApiResponse(201, populatedProduct, "Product created successfully")
+  );
+});
+/**
+ * @desc Get all products with optional filtering
+ * @route GET /api/products
+ * @access Public
+ */
+exports.getProducts = asyncHandler(async (req, res, next) => {
+  const { color, subcategory, status, minPrice, maxPrice, search, page = 1, limit = 20 } = req.query;
+  
+  // Build filter object
+  const filter = {};
+  
+  // Status filter (default to active if not specified)
+  if (status) {
+    filter.status = status;
+  } else {
+    filter.status = "active";
+    filter.isAvailable = true;
+  }
+
+  // Subcategory filter
+  if (subcategory) {
+    filter.subcategory = subcategory;
+  }
+
+  // Price range filter
+  if (minPrice || maxPrice) {
+    filter.price = {};
+    if (minPrice) filter.price.$gte = Number(minPrice);
+    if (maxPrice) filter.price.$lte = Number(maxPrice);
+  }
+
+  // Color filter - query variants first
+  if (color) {
+    const variantProductIds = await ProductVariant.find({
+      "color.name": { $regex: new RegExp(`^${color}$`, "i") },
+    }).distinct("productId");
+
+    if (variantProductIds.length > 0) {
+      filter._id = { $in: variantProductIds };
+    } else {
+      // No products found with this color
+      return res.json({ 
+        count: 0, 
+        products: [],
+        page: Number(page),
+        limit: Number(limit),
+        totalPages: 0,
+      });
+    }
+  }
+
+  // Search filter
+  if (search) {
+    filter.$text = { $search: search };
+  }
+
+  // Pagination
+  const pageNum = Math.max(1, Number(page));
+  const limitNum = Math.max(1, Math.min(100, Number(limit)));
+  const skip = (pageNum - 1) * limitNum;
+
+  // Query options
+  const queryOptions = {
+    sort: { createdAt: -1 },
+    skip,
+    limit: limitNum,
+      select: "title price slug rating numReviews   isAvailable",
+  };
+
+  // Query products with caching (cache-aside pattern)
+  // Note: Text search score sorting is handled automatically in the aggregate pipeline
+  const [products, total] = await Promise.all([
+    ProductCacheService.getProductsWithCache(filter, queryOptions),
+    ProductCacheService.getProductsCountWithCache(filter),
+  ]);
+
+  res.json({
+    count: products.length,
+    total,
+    page: pageNum,
+    limit: limitNum,
+    totalPages: Math.ceil(total / limitNum),
+    products,
+  });
+});
+
+/**
+ * @desc Update a product with variants
+ * @route PUT /api/products/:id
+ * @access Private/Admin
+ */
+exports.updateProduct = asyncHandler(async (req, res, next) => {
+  const { id } = req.params;
+
+  // 1️⃣ Parse variants if it's a string
+  if (req.body.variants && typeof req.body.variants === "string") {
+    try {
+      req.body.variants = JSON.parse(req.body.variants);
+    } catch (parseError) {
+      return next(
+        new ApiError("Invalid variants JSON format: " + parseError.message, 400)
+      );
+    }
+  }
+
+  // 2️⃣ Validate request data
+  const { error, value } = updateProductSchema.validate(req.body, {
+    abortEarly: false,
+  });
+  
+  if (error) {
+    const errorMessages = error.details.map((detail) => detail.message).join(", ");
+    return next(new ApiError(`Validation error: ${errorMessages}`, 400));
+  }
+
+  const { variants, ...productData } = value;
+
+  // 3️⃣ Group uploaded files by fieldname (if any)
+  const filesByField = req.files && req.files.length > 0 
+    ? groupFilesByField(req.files) 
+    : {};
+
+  // 4️⃣ Update product and variants using service
+  await updateProductAndVariants(
+    id,
+    productData,
+    variants,
+    filesByField
+  );
+
+  // 5️⃣ Invalidate cache after updating product
+  await ProductCacheService.invalidateCache();
+
+  // 6️⃣ Fetch and return the updated product with populated variants
+  const populatedProduct = await Product.findById(id)
+    .populate("variants")
+    .populate("productType", "name");
+
+  if (!populatedProduct) {
+    return next(new ApiError("Product was updated but could not be retrieved", 500));
+  }
+
+  res.status(200).json(
+    new ApiResponse(200, populatedProduct, "Product updated successfully")
+  );
+});
+
+/**
+ * @desc Partially update a product (PATCH - only update provided fields)
+ * @route PATCH /api/products/:id
+ * @access Private/Admin
+ */
+exports.patchProduct = asyncHandler(async (req, res, next) => {
+  const { id } = req.params;
+
+  // 1️⃣ Parse variants if it's a string
+  if (req.body.variants && typeof req.body.variants === "string") {
+    try {
+      req.body.variants = JSON.parse(req.body.variants);
+    } catch (parseError) {
+      return next(
+        new ApiError("Invalid variants JSON format: " + parseError.message, 400)
+      );
+    }
+  }
+
+  // 2️⃣ Validate request data (all fields optional for PATCH)
+  const { error, value } = updateProductSchema.validate(req.body, {
+    abortEarly: false,
+  });
+  
+  if (error) {
+    const errorMessages = error.details.map((detail) => detail.message).join(", ");
+    return next(new ApiError(`Validation error: ${errorMessages}`, 400));
+  }
+
+  // 3️⃣ Check if at least one field is provided for update
+  if (Object.keys(value).length === 0) {
+    return next(new ApiError("At least one field must be provided for update", 400));
+  }
+
+  const { variants, ...productData } = value;
+
+  // 4️⃣ Group uploaded files by fieldname (if any)
+  const filesByField = req.files && req.files.length > 0 
+    ? groupFilesByField(req.files) 
+    : {};
+
+  // 5️⃣ Update product and variants using service (only provided fields)
+  await updateProductAndVariants(
+    id,
+    productData,
+    variants,
+    filesByField
+  );
+
+  // 6️⃣ Invalidate cache after updating product
+  await ProductCacheService.invalidateCache();
+
+  // 7️⃣ Fetch and return the updated product with populated variants
+  const populatedProduct = await Product.findById(id)
+    .populate("variants")
+    .populate("productType", "name");
+
+  if (!populatedProduct) {
+    return next(new ApiError("Product was updated but could not be retrieved", 500));
+  }
+
+  res.status(200).json(
+    new ApiResponse(200, populatedProduct, "Product updated successfully")
+  );
+});
+
+/**
+ * @desc Delete a product with variants
+ * @route DELETE /api/products/:id
+ * @access Private/Admin
+ */
+exports.deleteProduct = asyncHandler(async (req, res, next) => {
+  const { id } = req.params;
+
+  // 1️⃣ Delete product and variants using service
+  await deleteProductAndVariants(id);
+
+  // 2️⃣ Invalidate cache after deleting product
+  await ProductCacheService.invalidateCache();
+
+  res.status(200).json(
+    new ApiResponse(200, null, "Product deleted successfully")
+  );
 });

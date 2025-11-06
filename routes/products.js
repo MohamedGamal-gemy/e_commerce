@@ -742,9 +742,17 @@
 
 const express = require("express");
 const router = express.Router();
-const { createProduct } = require("../controllers/products.controller");
+const {
+  createProduct,
+  getProducts,
+  updateProduct,
+  patchProduct,
+  deleteProduct,
+} = require("../controllers/products.controller");
+const asyncHandler = require("express-async-handler");
 const { protect, restrictTo } = require("../middlewares/auth");
 const upload = require("../middlewares/upload");
+const product = require("../models/product");
 
 // upload.fields يسمح نرفع صور للمنتج وصور للـ variants
 router.post(
@@ -757,6 +765,51 @@ router.post(
   //   { name: "variantImages", maxCount: 20 },
   // ]),
   createProduct
+);
+
+/**
+ * @desc    Get products with filters (color, subcategory)
+ * @route   GET /api/products
+ * @access  Public
+ */
+router.get("/", getProducts);
+
+/**
+ * @desc    Update a product with variants (full update)
+ * @route   PUT /api/products/:id
+ * @access  Private/Admin
+ */
+router.put(
+  "/:id",
+  // protect,
+  // restrictTo("admin", "vendor"),
+  upload.any(),
+  updateProduct
+);
+
+/**
+ * @desc    Partially update a product (partial update)
+ * @route   PATCH /api/products/:id
+ * @access  Private/Admin
+ */
+router.patch(
+  "/:id",
+  // protect,
+  // restrictTo("admin", "vendor"),
+  upload.any(),
+  patchProduct
+);
+
+/**
+ * @desc    Delete a product with variants
+ * @route   DELETE /api/products/:id
+ * @access  Private/Admin
+ */
+router.delete(
+  "/:id",
+  // protect,
+  // restrictTo("admin", "vendor"),
+  deleteProduct
 );
 
 module.exports = router;

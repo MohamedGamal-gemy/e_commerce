@@ -1,27 +1,39 @@
 const mongoose = require("mongoose");
+const slugify = require("slugify");
 
+/**
+ * Build a unified searchable text from product data
+ * @param {Object} product - Product document or data object
+ * @returns {string} - Lowercase searchable text
+ */
 function buildSearchableText(product) {
   const parts = [
     product.title,
-    product.shortDescription,
     product.description,
     ...(product.tags || []),
-    ...(product.attributes || []).map((a) => `${a.key} ${a.value}`),
+    ...(product.attributes || []).map((a) => `${a.key || ""} ${a.value || ""}`),
   ];
-  return parts.filter(Boolean).join(" ").toLowerCase();
+  return parts.filter(Boolean).join(" ").toLowerCase().trim();
 }
 
 module.exports = (schema) => {
+  // 🧩 دالة آمنة للحصول على موديل الـ Variant
   const getProductVariantModel = () => mongoose.model("ProductVariant");
+  const getProductTypeModel = () => mongoose.model("ProductType");
 
-  // --- Pre-save hook ---
+  // ✅ Pre-save hook
   schema.pre("save", async function (next) {
     try {
+      // 🔹 Generate slug automatically if not provided
       if (!this.slug && this.title) {
-        const base = this.title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
-        this.slug = `${base}-${Date.now().toString().slice(-6)}`;
+        const baseSlug = slugify(this.title, { lower: true, strict: true });
+        const uniqueSuffix = this._id
+          ? this._id.toString().slice(-6)
+          : Date.now().toString().slice(-6);
+        this.slug = `${baseSlug}-${uniqueSuffix}`;
       }
 
+      // 🔹 Activate discount if dates are valid
       const now = new Date();
       this.discountIsActive =
         this.discountValue > 0 &&
@@ -30,28 +42,94 @@ module.exports = (schema) => {
         now >= this.discountStart &&
         now <= this.discountEnd;
 
+      // 🔹 Update searchableText automatically
       this.searchableText = buildSearchableText(this);
+
       next();
     } catch (err) {
       next(err);
     }
   });
 
-  // --- Post-delete hook ---
+  // ✅ Hook قبل تعديل المنتج (findOneAndUpdate)
+  schema.pre("findOneAndUpdate", function (next) {
+    const update = this.getUpdate();
+
+    if (
+      update.title ||
+      update.description ||
+      update.tags ||
+      update.attributes
+    ) {
+      const newData = { ...update.$set, ...update };
+      const searchableText = buildSearchableText(newData);
+      this.setUpdate({
+        ...update,
+        $set: { ...update.$set, searchableText },
+      });
+    }
+
+    next();
+  });
+
+  // ✅ Hook بعد حذف المنتج
   schema.post("findOneAndDelete", async function (doc) {
     if (!doc) return;
+
     const ProductVariant = getProductVariantModel();
+    const ProductType = getProductTypeModel();
 
     const session = await mongoose.startSession();
     session.startTransaction();
+
     try {
+      // 🔹 حذف كل الـ Variants التابعة للمنتج
       await ProductVariant.deleteMany({ productId: doc._id }, { session });
+
+      // 🔹 تحديث عداد المنتجات في الـ productType
+      if (doc.productType) {
+        const count = await mongoose
+          .model("Product")
+          .countDocuments({ productType: doc.productType });
+        await ProductType.findByIdAndUpdate(
+          doc.productType,
+          { productCount: count },
+          { session }
+        );
+      }
+
       await session.commitTransaction();
+
+      // 🔹 Invalidate cache after product deletion
+      try {
+        const ProductCacheService = require("../services/productCache.service");
+        await ProductCacheService.invalidateCache(doc._id);
+      } catch (cacheError) {
+        console.error("❌ Cache invalidation error:", cacheError.message);
+      }
     } catch (err) {
       await session.abortTransaction();
-      console.error("Variant cleanup failed:", err);
+      console.error("❌ Product cleanup failed:", err);
     } finally {
       session.endSession();
+    }
+  });
+
+  // ✅ Hook بعد حفظ المنتج لتحديث عداد المنتجات
+  schema.post("save", async function (doc) {
+    if (!doc.productType) return;
+
+    const ProductType = getProductTypeModel();
+
+    try {
+      const count = await mongoose
+        .model("Product")
+        .countDocuments({ productType: doc.productType });
+      await ProductType.findByIdAndUpdate(doc.productType, {
+        productCount: count,
+      });
+    } catch (err) {
+      console.error("❌ Failed to update productType count:", err);
     }
   });
 };

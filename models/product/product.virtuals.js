@@ -8,7 +8,9 @@ module.exports = (schema) => {
 
   schema.virtual("discountPercentage").get(function () {
     if (!this.originalPrice || this.originalPrice <= this.price) return 0;
-    return Math.round(((this.originalPrice - this.price) / this.originalPrice) * 100);
+    return Math.round(
+      ((this.originalPrice - this.price) / this.originalPrice) * 100
+    );
   });
 
   schema.virtual("defaultVariant", {
@@ -30,5 +32,13 @@ module.exports = (schema) => {
       this.variants.forEach((v) => v.sizes.forEach((s) => sizes.add(s.size)));
     }
     return Array.from(sizes);
+  });
+
+  schema.virtual("colorPreviews").get(function () {
+    if (!this.populated("variants")) return [];
+    return this.variants.map((v) => ({
+      color: v.color,
+      previewImage: v.images?.[0]?.url || null,
+    }));
   });
 };
