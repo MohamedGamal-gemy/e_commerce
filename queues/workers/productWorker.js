@@ -219,6 +219,45 @@ const worker = new Worker(
           // Optional: ignore silently for now
           return;
         }
+        case "updateProductAggregates": {
+          const { productId } = data || {};
+          if (!productId) return;
+          const variants = await ProductVariant.find({ productId }).lean();
+          const variantIds = variants.map((v) => v._id);
+
+          const colors = variants.map((v) => ({
+            name: v.color?.name || "",
+            value: v.color?.value || "",
+            image: v.images?.[0]?.url || null,
+          }));
+
+          const mainImage = variants.find((v) => v.isDefault)?.images?.[0]?.url || variants[0]?.images?.[0]?.url || null;
+
+          const totalStock = variants.reduce(
+            (acc, v) => acc + (v.sizes || []).reduce((s, sz) => s + (Number(sz.stock) || 0), 0),
+            0
+          );
+          const isAvailable = totalStock > 0;
+
+          await Product.findByIdAndUpdate(
+            productId,
+            {
+              variants: variantIds,
+              numVariants: variantIds.length,
+              colors,
+              ...(mainImage ? { mainImage } : {}),
+              totalStock,
+              isAvailable,
+            },
+            { new: false }
+          );
+          return;
+        }
+        case "cleanupAfterDelete": {
+          // Deletions are handled transactionally in the service layer.
+          // Keep this as a no-op to avoid warnings and future-proof if needed.
+          return;
+        }
         default:
           console.log("⚠️ Unknown job:", name);
       }

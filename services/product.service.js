@@ -1,6 +1,8 @@
 const Product = require("../models/product");
 const ProductVariant = require("../models/productVariant");
 const { uploadImage } = require("../utils/file.utils");
+const cloudinary = require("cloudinary").v2;
+
 const mongoose = require("mongoose");
 const ApiError = require("../utils/ApiError");
 
@@ -24,10 +26,20 @@ const uploadVariantImages = async (variantImages, productTitle, colorName) => {
   return Promise.all(
     variantImages.map(async (img) => {
       try {
-        const uploadResult = await uploadImage(
-          img.buffer,
-          `products/variants/${sanitizedTitle}`
-        );
+        let uploadResult;
+        if (img.buffer) {
+          uploadResult = await uploadImage(
+            img.buffer,
+            `products/variants/${sanitizedTitle}`
+          );
+        } else if (img.path) {
+          uploadResult = await cloudinary.uploader.upload(img.path, {
+            folder: `products/variants/${sanitizedTitle}`,
+          });
+        } else {
+          throw new Error("Image must have buffer or path");
+        }
+
         return {
           url: uploadResult.secure_url,
           publicId: uploadResult.public_id,

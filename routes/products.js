@@ -46,7 +46,7 @@ router.get(
     const query = { isAvailable: true, status: "active" };
 
     const products = await Product.find(query)
-      // .select("title price mainImage colors sku slug searchableText rating finalPrice") // فقط الحقول المطلوبة للـ list card
+      .select("title price mainImage colors sku slug searchableText rating finalPrice") // فقط الحقول المطلوبة للـ list card
       .skip(skip)
       .limit(limit)
       .sort({ createdAt: -1 }); // ترتيب حسب الأحدث أولاً

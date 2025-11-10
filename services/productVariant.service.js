@@ -100,6 +100,9 @@ exports.updateVariant = async (variantId, updateData, session = null) => {
  * @param {mongoose.Session} session - Optional MongoDB session
  * @returns {Promise<boolean>} - True if deleted successfully
  */
+const { deleteImage } = require("../utils/file.utils");
+const { productQueue } = require("../queues/productQueue");
+
 exports.deleteVariant = async (variantId, session = null) => {
   if (!variantId || !mongoose.isValidObjectId(variantId)) {
     throw new ApiError("Valid variantId is required", 400);
@@ -108,14 +111,20 @@ exports.deleteVariant = async (variantId, session = null) => {
   const deleteOptions = session ? { session } : {};
 
   try {
-    const result = await ProductVariant.findByIdAndDelete(
-      variantId,
-      deleteOptions
-    );
-
-    if (!result) {
+    const variant = await ProductVariant.findById(variantId);
+    if (!variant) {
       throw new ApiError("Variant not found", 404);
     }
+
+    // Delete images from Cloudinary (best-effort)
+    await Promise.allSettled(
+      (variant.images || [])
+        .filter((img) => img && img.publicId)
+        .map((img) => deleteImage(img.publicId))
+    );
+
+    // Delete the variant document
+    const result = await ProductVariant.findByIdAndDelete(variantId, deleteOptions);
 
     return true;
   } catch (error) {

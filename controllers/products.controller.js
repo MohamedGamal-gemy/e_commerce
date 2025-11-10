@@ -15,7 +15,6 @@ const {
   updateProductAndVariants,
   deleteProductAndVariants,
 } = require("../services/product.service");
-const ProductCacheService = require("../services/productCache.service");
 const uploadVariantImages = require("../utils/uploadVariantImages");
 const { groupFilesByField } = require("../utils/file.utils");
 const { productQueue } = require("../queues/productQueue");
@@ -233,7 +232,7 @@ exports.updateProduct = asyncHandler(async (req, res, next) => {
   await updateProductAndVariants(id, productData, variants, filesByField);
 
   // 5️⃣ Invalidate cache after updating product
-  await ProductCacheService.invalidateCache();
+  
 
   // 6️⃣ Fetch and return the updated product with populated variants
   const populatedProduct = await Product.findById(id)
@@ -301,7 +300,7 @@ exports.patchProduct = asyncHandler(async (req, res, next) => {
   await updateProductAndVariants(id, productData, variants, filesByField);
 
   // 6️⃣ Invalidate cache after updating product
-  await ProductCacheService.invalidateCache();
+  
 
   // 7️⃣ Fetch and return the updated product with populated variants
   const populatedProduct = await Product.findById(id)
@@ -333,7 +332,7 @@ exports.deleteProduct = asyncHandler(async (req, res, next) => {
   await deleteProductAndVariants(id);
 
   // 2️⃣ Invalidate cache after deleting product
-  await ProductCacheService.invalidateCache();
+  
 
   res
     .status(200)
