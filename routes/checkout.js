@@ -5,130 +5,156 @@ const asyncHandler = require("express-async-handler");
 
 const Stripe = require("stripe");
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
-const Cart = require("../models/CartItem");
+const Cart = require("../models/cart");
+const GuestCart = require("../models/guestCart");
 const Order = require("../models/Order");
-const { User } = require("../models/userModel");
+const ProductVariant = require("../models/productVariant");
+const { protect } = require("../middlewares/protect");
 
+router.post(
+  "/create-order",
+  protect,
+  asyncHandler(async (req, res) => {
+    try {
+      const { billingDetails, shipping = 50, discount = 0 } = req.body;
+      const userId = req.user && (req.user.id || req.user._id?.toString());
+      const sessionId =
+        req.cookies?.sessionId || req.headers["x-session-id"] || null;
 
-router.post("/create-order", async (req, res) => {
-  try {
-    const {
-      sessionId,
-      userId,
-      billingDetails, // 🧾 بيانات العميل
-      shipping = 50,
-      discount = 0,
-    } = req.body;
+      if (
+        !billingDetails ||
+        !billingDetails.fullName ||
+        !billingDetails.email ||
+        !billingDetails.phone ||
+        !billingDetails.address
+      ) {
+        return res
+          .status(400)
+          .json({ error: "Billing details are incomplete" });
+      }
 
-    if (!sessionId && !userId) {
-      return res
-        .status(400)
-        .json({ error: "Session ID or User ID is required" });
-    }
+      // 🛡️ إجبار تسجيل الدخول للـ checkout (مفروض عبر protect)
+      if (!userId) {
+        return res
+          .status(401)
+          .json({
+            code: "NEED_AUTH",
+            message: "Authentication required for checkout",
+          });
+      }
 
-    if (
-      !billingDetails ||
-      !billingDetails.fullName ||
-      !billingDetails.email ||
-      !billingDetails.phone ||
-      !billingDetails.address
-    ) {
-      return res.status(400).json({ error: "Billing details are incomplete" });
-    }
+      // 🔀 دمج سلة الضيف (إن وُجدت) إلى سلة المستخدم
+      if (sessionId) {
+        const guest = await GuestCart.findOne({ sessionId, isActive: true });
+        if (guest && Array.isArray(guest.items) && guest.items.length) {
+          for (const it of guest.items) {
+            await Cart.addItem(userId, {
+              product: it.product,
+              variant: it.variant,
+              size: it.size,
+              color: it.color,
+              quantity: it.quantity,
+              price: it.price,
+            });
+          }
+          // نظّف سلة الضيف بعد الدمج
+          await GuestCart.findOneAndUpdate(
+            { sessionId },
+            { items: [], totalItems: 0, totalPrice: 0 }
+          );
+        }
+      }
 
-    // 🛒 جلب بيانات الكارت بالـ sessionId أو userId
-    const cart = await Cart.findOne(userId ? { userId } : { sessionId })
-      .populate({
-        path: "items.productId",
-        select: "title price slug",
-      })
-      .populate({
-        path: "items.variantId",
-        select: "color images",
-        transform: (doc) => {
-          if (!doc) return doc;
-          return {
-            ...doc.toObject(),
-            images: doc.images?.length ? [doc.images[0]] : [],
-          };
-        },
+      // 🛒 جلب سلة المستخدم بعد الدمج (إن وُجد)
+      const cart = await Cart.findOne({ user: userId, isActive: true })
+        .populate({ path: "items.product", select: "title price slug" })
+        .populate({ path: "items.variant", select: "color images" });
+
+      if (!cart || !cart.items.length) {
+        return res.status(400).json({ error: "Cart is empty or not found" });
+      }
+
+      // إجمالي السعر
+      const subtotal = cart.items.reduce(
+        (acc, item) => acc + (item.price || 0) * (item.quantity || 0),
+        0
+      );
+      const total = subtotal + shipping - discount;
+
+      // تجهيز عناصر الطلب (snapshot وقت الشراء)
+      const orderItems = cart.items.map((item) => {
+        const image =
+          Array.isArray(item.variant?.images) && item.variant.images.length
+            ? item.variant.images[0].url || item.variant.images[0]
+            : "";
+        return {
+          product: item.product._id,
+          variant: item.variant._id,
+          size: item.size,
+          color: item.variant?.color || undefined,
+          quantity: item.quantity,
+          price: item.price,
+          productSnapshot: {
+            title: item.product.title,
+            image,
+            color: item.variant?.color || undefined,
+          },
+        };
       });
 
-    if (!cart || !cart.items.length) {
-      return res.status(400).json({ error: "Cart is empty or not found" });
-    }
+      // إنشاء order أولاً (status pending)
+      const order = new Order({
+        user: userId,
+        sessionId: userId ? null : sessionId,
+        items: orderItems,
+        subtotal,
+        shippingPrice: shipping,
+        discount,
+        totalPrice: total,
+        billingDetails,
+        payment: { method: "card", status: "pending" },
+        status: "pending",
+      });
 
-    // 🧮 إجمالي السعر
-    const subtotal = cart.items.reduce(
-      (acc, item) => acc + item.price * item.quantity,
-      0
-    );
-    const total = subtotal + shipping - discount;
+      await order.save();
 
-    // 📦 تجهيز عناصر الطلب (snapshot وقت الشراء)
-    const orderItems = cart.items.map((item) => ({
-      productId: item.productId._id,
-      variantId: item.variantId._id,
-      size: item.size,
-      quantity: item.quantity,
-      price: item.price,
-      title: item.productId.title,
-      image: item.variantId?.images?.[0]?.url || "",
-    }));
-
-    // 🧾 إنشاء order أولاً (status pending)
-    const order = new Order({
-      userId: userId || null,
-      sessionId: sessionId || null,
-      items: orderItems,
-      subtotal,
-      shipping,
-      discount,
-      total,
-      billingDetails,
-      status: "pending",
-      paymentStatus: "unpaid",
-      paymentMethod: "stripe",
-    });
-
-    await order.save();
-
-    // 💳 إعداد عناصر Stripe
-    const line_items = orderItems.map((item) => ({
-      price_data: {
-        currency: "egp",
-        product_data: {
-          name: item.title || "Unknown Product",
-          description: `Color: ${
-            item.variantId?.color?.name || "N/A"
-          } | Size: ${item.size}`,
-          images: item.image ? [item.image] : [],
+      // إعداد عناصر Stripe
+      const line_items = orderItems.map((item) => ({
+        price_data: {
+          currency: "egp",
+          product_data: {
+            name: item.productSnapshot?.title || "Unknown Product",
+            description: `Size: ${item.size}`,
+            images: item.productSnapshot?.image
+              ? [item.productSnapshot.image]
+              : [],
+          },
+          unit_amount: Math.round(item.price * 100),
         },
-        unit_amount: Math.round(item.price * 100),
-      },
-      quantity: item.quantity,
-    }));
+        quantity: item.quantity,
+      }));
 
-    // 💰 إنشاء Stripe session وربطها بالـ order
-    const session = await stripe.checkout.sessions.create({
-      payment_method_types: ["card"],
-      line_items,
-      mode: "payment",
-      success_url: `${process.env.CLIENT_URL}/checkout/success?orderId=${order._id}`,
-      cancel_url: `${process.env.CLIENT_URL}/checkout/cancel`,
-      metadata: { orderId: order._id.toString() },
-    });
+      // إنشاء Stripe session وربطها بالـ order
+      const session = await stripe.checkout.sessions.create({
+        payment_method_types: ["card"],
+        line_items,
+        mode: "payment",
+        success_url: `${process.env.CLIENT_URL}/checkout/success?orderId=${order._id}`,
+        cancel_url: `${process.env.CLIENT_URL}/checkout/cancel`,
+        metadata: { orderId: order._id.toString() },
+      });
 
-    // 🔗 حفظ stripeSessionId جوه الطلب
-    order.stripeSessionId = session.id;
-    await order.save();
+      // حفظ stripeSessionId جوه الطلب
+      order.stripeSessionId = session.id;
+      await order.save();
 
-    res.json({ url: session.url });
-  } catch (error) {
-    console.error("❌ Error creating order:", error);
-    res.status(500).json({ error: "Failed to create order" });
-  }
-});
+      res.json({ url: session.url });
+    } catch (error) {
+      console.error("❌ Error creating order:", error);
+      res.status(500).json({ error: "Failed to create order" });
+    }
+  })
+);
 
 //
 router.post("/confirm", async (req, res) => {
@@ -228,6 +254,100 @@ router.get("/get-orders", async (req, res) => {
 // });
 
 // desd
+// router.get("/admin/orders", async (req, res) => {
+//   try {
+//     const {
+//       search,
+//       status,
+//       from,
+//       to,
+//       minTotal,
+//       maxTotal,
+//       page = 1,
+//       limit = 10,
+//     } = req.query;
+
+//     const filter = {};
+
+//     // 🔍 بحث بالاسم أو الإيميل أو ID
+//     if (search) {
+//       const regex = new RegExp(search, "i");
+//       filter.$or = [
+//         { "billingDetails.fullName": regex },
+//         { "billingDetails.email": regex },
+//         { _id: search.length === 24 ? search : undefined }, // لو كتب الـ ID كامل
+//       ].filter(Boolean);
+//     }
+
+//     // 📦 فلترة بالحالة
+//     if (status && status !== "all") {
+//       filter.status = status;
+//     }
+
+//     // 🗓️ فلترة بالتاريخ
+//     if (from || to) {
+//       filter.createdAt = {};
+//       if (from) filter.createdAt.$gte = new Date(from);
+//       if (to) {
+//         const toDate = new Date(to);
+//         toDate.setHours(23, 59, 59, 999);
+//         filter.createdAt.$lte = toDate;
+//       }
+//     }
+
+//     // 💰 فلترة بالسعر
+//     if (minTotal || maxTotal) {
+//       filter.total = {};
+//       if (minTotal) filter.total.$gte = Number(minTotal);
+//       if (maxTotal) filter.total.$lte = Number(maxTotal);
+//     }
+
+//     // 📄 Pagination
+//     const skip = (Number(page) - 1) * Number(limit);
+
+//     const [orders, totalOrders] = await Promise.all([
+//       Order.find(filter)
+//         .populate({
+//           path: "userId",
+//           select: "name email",
+//         })
+//         .populate({
+//           path: "items.productId",
+//           select: "title price",
+//         })
+//         .populate({
+//           path: "items.variantId",
+//           select: "color images",
+//           transform: (doc) => {
+//             if (!doc) return doc;
+//             return {
+//               ...doc.toObject(),
+//               images: doc.images?.length ? [doc.images[0]] : [],
+//             };
+//           },
+//         })
+//         .sort({ createdAt: -1 })
+//         .skip(skip)
+//         .limit(Number(limit)),
+
+//       Order.countDocuments(filter),
+//     ]);
+
+//     const totalPages = Math.ceil(totalOrders / limit);
+
+//     res.json({
+//       orders,
+//       totalOrders,
+//       totalPages,
+//       currentPage: Number(page),
+//     });
+//   } catch (error) {
+//     console.error("❌ Error fetching admin orders:", error);
+//     res.status(500).json({ error: "Failed to fetch admin orders" });
+//   }
+// });
+
+// GET /api/checkout/admin/orders
 router.get("/admin/orders", async (req, res) => {
   try {
     const {
@@ -242,23 +362,11 @@ router.get("/admin/orders", async (req, res) => {
     } = req.query;
 
     const filter = {};
+    const pageNum = Math.max(1, Number(page) || 1);
+    const limitNum = Math.min(100, Math.max(1, Number(limit) || 10));
+    const skip = (pageNum - 1) * limitNum;
 
-    // 🔍 بحث بالاسم أو الإيميل أو ID
-    if (search) {
-      const regex = new RegExp(search, "i");
-      filter.$or = [
-        { "billingDetails.fullName": regex },
-        { "billingDetails.email": regex },
-        { _id: search.length === 24 ? search : undefined }, // لو كتب الـ ID كامل
-      ].filter(Boolean);
-    }
-
-    // 📦 فلترة بالحالة
-    if (status && status !== "all") {
-      filter.status = status;
-    }
-
-    // 🗓️ فلترة بالتاريخ
+    // Dates
     if (from || to) {
       filter.createdAt = {};
       if (from) filter.createdAt.$gte = new Date(from);
@@ -269,58 +377,74 @@ router.get("/admin/orders", async (req, res) => {
       }
     }
 
-    // 💰 فلترة بالسعر
-    if (minTotal || maxTotal) {
-      filter.total = {};
-      if (minTotal) filter.total.$gte = Number(minTotal);
-      if (maxTotal) filter.total.$lte = Number(maxTotal);
+    // Totals
+    const minT = Number(minTotal);
+    const maxT = Number(maxTotal);
+    if (!Number.isNaN(minT) || !Number.isNaN(maxT)) {
+      filter.totalPrice = {};
+      if (!Number.isNaN(minT)) filter.totalPrice.$gte = minT;
+      if (!Number.isNaN(maxT)) filter.totalPrice.$lte = maxT;
     }
 
-    // 📄 Pagination
-    const skip = (Number(page) - 1) * Number(limit);
+    // Status
+    if (status && status !== "all") filter.status = status;
+
+    // Search (billingDetails + _id + user.name/email)
+    if (search) {
+      const regex = new RegExp(String(search), "i");
+      const or = [
+        { "billingDetails.fullName": regex },
+        { "billingDetails.email": regex },
+      ];
+      if (typeof search === "string" && search.length === 24) {
+        or.push({ _id: search });
+      }
+
+      // Find users matching search to include in OR
+      const users = await User.find(
+        { $or: [{ name: regex }, { email: regex }] },
+        { _id: 1 }
+      ).lean();
+      if (users.length) {
+        or.push({ user: { $in: users.map((u) => u._id) } });
+      }
+
+      filter.$or = or;
+    }
 
     const [orders, totalOrders] = await Promise.all([
       Order.find(filter)
+        .populate({ path: "user", select: "name email" })
+        .populate({ path: "items.product", select: "title price" })
         .populate({
-          path: "userId",
-          select: "name email",
-        })
-        .populate({
-          path: "items.productId",
-          select: "title price",
-        })
-        .populate({
-          path: "items.variantId",
+          path: "items.variant",
           select: "color images",
           transform: (doc) => {
             if (!doc) return doc;
-            return {
-              ...doc.toObject(),
-              images: doc.images?.length ? [doc.images[0]] : [],
-            };
+            const o = doc.toObject();
+            return { ...o, images: o.images?.length ? [o.images[0]] : [] };
           },
         })
         .sort({ createdAt: -1 })
         .skip(skip)
-        .limit(Number(limit)),
-
+        .limit(limitNum)
+        .lean(),
       Order.countDocuments(filter),
     ]);
 
-    const totalPages = Math.ceil(totalOrders / limit);
+    const totalPages = Math.ceil(totalOrders / limitNum);
 
     res.json({
       orders,
       totalOrders,
       totalPages,
-      currentPage: Number(page),
+      currentPage: pageNum,
     });
   } catch (error) {
     console.error("❌ Error fetching admin orders:", error);
     res.status(500).json({ error: "Failed to fetch admin orders" });
   }
 });
-
 //
 // update status
 router.patch("/orders/:id/status", async (req, res) => {

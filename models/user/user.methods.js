@@ -1,5 +1,6 @@
 const bcrypt = require("bcryptjs");
 const crypto = require("crypto");
+const jwt = require("jsonwebtoken");
 
 module.exports = (schema) => {
   // ✅ Compare entered password with hashed one
@@ -23,5 +24,14 @@ module.exports = (schema) => {
       .digest("hex");
     this.resetPasswordExpires = Date.now() + 10 * 60 * 1000; // 10 mins
     return resetToken;
+  };
+
+  // ✅ Generate JWT token (for authentication)
+  schema.methods.generateToken = function () {
+    return jwt.sign(
+      { id: this._id, email: this.email, role: this.role },
+      process.env.JWT_SECRET,
+      { expiresIn: "1d" } // token valid for 1 day
+    );
   };
 };

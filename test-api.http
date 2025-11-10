@@ -1,20 +1,21 @@
 ### Create Product Type
-POST http://localhost:9000/api/product-types
-Content-Type: application/json
+# POST http://localhost:9000/api/product-types
+# Content-Type: application/json
 
-{
-  "name": "T-Shirts",
-  "description": "All types of t-shirts for men",
-  "image": {
-    "url": "https://example.com/images/tshirt.jpg",
-    "publicId": "product-types/tshirt",
-    "alt": "T-Shirt"
-  },
-  "order": 1
-}
+# {
+#   "name": "T-Shirts",
+#   "description": "All types of t-shirts for men",
+#   "image": {
+#     "url": "https://example.com/images/tshirt.jpg",
+#     "publicId": "product-types/tshirt",
+#     "alt": "T-Shirt"
+#   },
+#   "order": 1
+# }
 
 ### Get All Product Types
 GET http://localhost:9000/api/products
+# GET http://localhost:9000/api/products/limited-edition-long-wool-trench-coat-020820
 
 ### Get Single Product Type
 # GET http://localhost:9000/api/product-types/{{PRODUCT_TYPE_ID}}
@@ -33,12 +34,12 @@ GET http://localhost:9000/api/products
 # DELETE http://localhost:9000/api/product-types/{{PRODUCT_TYPE_ID}}
 
 ### Update Product - Fix productType (when productType is null or deleted)
-PUT http://localhost:9000/api/products/690b9c591caa026336f86e98
-Content-Type: application/json
+# PUT http://localhost:9000/api/products/690b9c591caa026336f86e98
+# Content-Type: application/json
 
-{
-  "productType": "690bb7cfd8831f488102089a"
-}
+# {
+#   "productType": "690bb7cfd8831f488102089a"
+# }
 
 ### Update Product - Full example (PUT)
 # PUT http://localhost:9000/api/products/{{PRODUCT_ID}}
@@ -53,28 +54,28 @@ Content-Type: application/json
 # }
 
 ### Partially Update Product - Only update price (PATCH)
-PATCH http://localhost:9000/api/products/690b9c591caa026336f86e98
-Content-Type: application/json
+# PATCH http://localhost:9000/api/products/690b9c591caa026336f86e98
+# Content-Type: application/json
 
-{
-  "price": 199.99
-}
+# {
+#   "price": 199.99
+# }
 
-### Partially Update Product - Update multiple fields (PATCH)
-PATCH http://localhost:9000/api/products/690b9c591caa026336f86e98
-Content-Type: application/json
+# ### Partially Update Product - Update multiple fields (PATCH)
+# PATCH http://localhost:9000/api/products/690b9c591caa026336f86e98
+# Content-Type: application/json
 
-{
-  "title": "New Product Title",
-  "price": 250,
-  "status": "active",
-  "isFeatured": true
-}
+# {
+#   "title": "New Product Title",
+#   "price": 250,
+#   "status": "active",
+#   "isFeatured": true
+# }
 
 ### Partially Update Product - Only update productType (PATCH)
-PATCH http://localhost:9000/api/products/690b9c591caa026336f86e98
-Content-Type: application/json
+# PATCH http://localhost:9000/api/products/690b9c591caa026336f86e98
+# Content-Type: application/json
 
-{
-  "productType": "690bb7cfd8831f488102089a"
-}
+# {
+#   "productType": "690bb7cfd8831f488102089a"
+# }

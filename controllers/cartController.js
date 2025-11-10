@@ -1,159 +1,276 @@
 const asyncHandler = require("express-async-handler");
-const mongoose = require("mongoose");
-const Cart = require("../models/CartItem");
-const { Product } = require("../models/productModel");
+const Cart = require("../models/cart");
+const GuestCart = require("../models/guestCart");
+const Product = require("../models/product");
+const ProductVariant = require("../models/productVariant");
 
-const addToCart = asyncHandler(async (req, res) => {
-  const { userId, productId, variantId, size, stock } = req.body;
+// GET: Fetch current cart (user or guest)
+const getCart = asyncHandler(async (req, res) => {
+  const userId = req.user && req.user.id;
+  const sessionId = req.sessionId;
 
-  if (!userId || !productId || !variantId || !size || !stock) {
-    return res.status(400).json({ message: "Missing required fields" });
-  }
+  // دالة مساعدة لتبسيط بيانات المنتج والڤاريانت
+  const simplifyCart = (cartDoc) => {
+    if (!cartDoc) return null;
 
-  const product = await Product.findById(productId);
-  if (!product) {
-    return res.status(404).json({ message: "Product not found" });
-  }
+    const simplifiedItems = cartDoc.items.map((item) => {
+      const product = item.product
+        ? {
+            _id: item.product._id,
+            title: item.product.title,
+            slug: item.product.slug,
+            price: item.product.price,
+          }
+        : null;
 
-  const variant = product.variants.find(
-    (v) => v._id.toString() === variantId.toString()
-  );
-  if (!variant) {
-    return res.status(400).json({ message: "Selected variant not available" });
-  }
+      const variant = item.variant
+        ? {
+            _id: item.variant._id,
+            color: item.variant.color,
+            image: item.variant.images?.length ? item.variant.images[0] : null, // 👈 أول صورة فقط
+          }
+        : null;
 
-  const sizeData = variant.sizes.find((s) => s.size === size);
-  if (!sizeData) {
-    return res.status(400).json({ message: "Selected size not available" });
-  }
+      return {
+        product,
+        variant,
+        size: item.size,
+        color: item.color,
+        quantity: item.quantity,
+        price: item.price,
+      };
+    });
 
-  if (sizeData.stock < stock) {
-    return res.status(400).json({
-      message: `Only ${sizeData.stock} items available in stock for this size`,
+    return {
+      _id: cartDoc._id,
+      sessionId: cartDoc.sessionId,
+      totalItems: simplifiedItems.length,
+      subtotal: simplifiedItems.reduce(
+        (sum, item) => sum + (item.price || 0) * (item.quantity || 0),
+        0
+      ),
+      items: simplifiedItems,
+    };
+  };
+
+  let cart;
+  if (userId) {
+    cart = await Cart.findOne({ user: userId, isActive: true })
+      .populate({
+        path: "items.product",
+        select: "title slug price",
+      })
+      .populate({
+        path: "items.variant",
+        select: "color images",
+      });
+    return res.status(200).json({
+      type: "user",
+      cart: simplifyCart(cart),
     });
   }
 
-  let cart = await Cart.findOne({ userId });
+  cart = await GuestCart.findOne({ sessionId, isActive: true })
+    .populate({
+      path: "items.product",
+      select: "title slug price",
+    })
+    .populate({
+      path: "items.variant",
+      select: "color images",
+    });
 
-  if (!cart) {
-    cart = new Cart({ userId, items: [] });
+  return res.status(200).json({
+    type: "guest",
+    sessionId,
+    cart: simplifyCart(cart),
+  });
+});
+// POST: Add item to cart (user or guest)
+const addItem = asyncHandler(async (req, res) => {
+  const userId = req.user && req.user.id;
+  const sessionId = req.sessionId;
+
+  const { product, variant, size, quantity } = req.body;
+  if (!product || !variant || !size || !quantity)
+    return res
+      .status(400)
+      .json({ message: "product, variant, size, quantity are required" });
+
+  const [prodDoc, varDoc] = await Promise.all([
+    Product.findById(product).select("price"),
+    ProductVariant.findById(variant).select("color sizes"),
+  ]);
+
+  if (!prodDoc || !varDoc)
+    return res.status(404).json({ message: "Product or Variant not found" });
+
+  const sizeInfo = (varDoc.sizes || []).find((s) => s.size === size);
+  if (!sizeInfo)
+    return res
+      .status(400)
+      .json({ message: `Size ${size} is not available for this variant` });
+
+  const color =
+    (varDoc.color && (varDoc.color.name || varDoc.color.value)) || "";
+  const price = prodDoc.price;
+
+  if (userId) {
+    const cart = await Cart.addItem(userId, {
+      product,
+      variant,
+      size,
+      color,
+      quantity,
+      price,
+    });
+    const populatedCart = await Cart.findById(cart._id)
+      .populate({ path: "items.product", select: "title slug price" })
+      .populate({
+        path: "items.variant",
+        select: "color images",
+        transform: (doc) => {
+          if (!doc) return doc;
+          const obj = doc.toObject();
+          return { ...obj, images: obj.images?.length ? [obj.images[0]] : [] };
+        },
+      });
+    return res
+      .status(201)
+      .json({ message: "Item added", cart: populatedCart, type: "user" });
   }
 
-  const existingItem = cart.items.find(
-    (item) =>
-      item.productId.toString() === productId &&
-      item.variantId.toString() === variantId &&
-      item.size === size
+  const cart = await GuestCart.addItem(sessionId, {
+    product,
+    variant,
+    size,
+    color,
+    quantity,
+    price,
+  });
+  const populatedCart = await GuestCart.findById(cart._id)
+    .populate({ path: "items.product", select: "title slug price" })
+    .populate({ path: "items.variant", select: "color images" });
+  return res.status(201).json({
+    message: "Item added",
+    cart: populatedCart,
+    type: "guest",
+    sessionId,
+  });
+});
+
+// PATCH: Update item quantity (user or guest)
+const updateItemQuantity = asyncHandler(async (req, res) => {
+  const userId = req.user?.id;
+  const sessionId = req.sessionId;
+  const { variant, size, quantity } = req.body;
+
+  if (!variant || !size || typeof quantity !== "number") {
+    return res.status(400).json({
+      message: "variant, size, and quantity are required",
+    });
+  }
+
+  const Model = userId ? Cart : GuestCart;
+  const findKey = userId
+    ? { user: userId, isActive: true }
+    : { sessionId, isActive: true };
+
+  const cart = await Model.findOne(findKey);
+  if (!cart) return res.status(404).json({ message: "Cart not found" });
+
+  const index = cart.items.findIndex(
+    (i) => i.variant.toString() === variant.toString() && i.size === size
+    // &&
+    // (!color || i.color === color)
   );
 
-  if (existingItem) {
-    const totalRequested = existingItem.stock + stock;
+  if (index === -1)
+    return res.status(404).json({ message: "Item not found in cart" });
 
-    if (sizeData.stock < totalRequested) {
-      return res.status(400).json({
-        message: `You already have ${existingItem.stock} in cart. Only ${
-          sizeData.stock - existingItem.stock
-        } more can be added.`,
-      });
-    }
-
-    existingItem.stock = totalRequested;
+  // 🔥 لو الكمية <= 0 احذف العنصر
+  if (quantity <= 0) {
+    cart.items.splice(index, 1);
   } else {
-    cart.items.push({ productId, variantId, size, stock });
+    cart.items[index].quantity = quantity;
   }
 
   await cart.save();
 
-  res.status(200).json({
-    message: "Item added to cart successfully",
-    cart,
+  // ✅ Populate خفيف + أول صورة فقط
+  // const populatedCart = await Model.findById(cart._id)
+  //   .populate({
+  //     path: "items.product",
+  //     select: "title slug price",
+  //   })
+  //   .populate({
+  //     path: "items.variant",
+  //     select: "color images",
+  //     transform: (doc) => {
+  //       if (!doc) return doc;
+  //       const obj = doc.toObject();
+  //       return { ...obj, images: obj.images?.length ? [obj.images[0]] : [] };
+  //     },
+  //   })
+  //   .lean(); // مهم لتخفيف الحمل
+
+  return res.status(200).json({
+    message: "Cart updated successfully",
+    // cart: populatedCart,
+    type: userId ? "user" : "guest",
   });
 });
 
-const getCart = asyncHandler(async (req, res) => {
-  const { userId } = req.params;
+// DELETE: Remove item (user or guest)
+const removeItem = asyncHandler(async (req, res) => {
+  const userId = req.user?.id;
+  const sessionId = req.sessionId;
+  const { variant, size, color } = req.body;
 
-  if (!userId) {
-    return res.status(400).json({ message: "User ID is required" });
+  if (!variant || !size)
+    return res.status(400).json({ message: "variant and size are required" });
+
+  const model = userId ? Cart : GuestCart;
+  const key = userId ? userId : sessionId;
+
+  const cart = await model.removeItem(key, variant, size, color);
+  if (!cart) return res.status(404).json({ message: "Cart not found" });
+
+  const populatedCart = await model
+    .findById(cart._id)
+    .populate({ path: "items.product", select: "title slug price" })
+    .populate({ path: "items.variant", select: "color images" });
+
+  return res.status(200).json({
+    message: "Item removed",
+    cart: populatedCart,
+    type: userId ? "user" : "guest",
+    sessionId,
+  });
+});
+
+// DELETE: Clear cart (user or guest)
+const clearCart = asyncHandler(async (req, res) => {
+  const userId = req.user && req.user.id;
+  const sessionId = req.sessionId;
+
+  if (userId) {
+    const cart = await Cart.clearCart(userId);
+    return res
+      .status(200)
+      .json({ message: "Cart cleared", cart, type: "user" });
   }
 
-  const cart = await Cart.aggregate([
-    { $match: { userId: new mongoose.Types.ObjectId(userId) } },
-    { $unwind: "$items" },
-    {
-      $lookup: {
-        from: "products",
-        localField: "items.productId",
-        foreignField: "_id",
-        as: "product",
-      },
-    },
-    { $unwind: "$product" },
-    {
-      $addFields: {
-        filteredVariant: {
-          $arrayElemAt: [
-            {
-              $filter: {
-                input: "$product.variants",
-                as: "variant",
-                cond: { $eq: ["$$variant._id", "$items.variantId"] },
-              },
-            },
-            0,
-          ],
-        },
-      },
-    },
-    {
-      $project: {
-        _id: 1,
-        userId: 1,
-        item: {
-          productId: "$items.productId",
-          size: "$items.size",
-          stock: "$items.stock",
-          variant: {
-            _id: "$filteredVariant._id",
-            color: "$filteredVariant.color",
-            images: { $slice: ["$filteredVariant.images", 1] }, // أول صورة فقط
-            // sizes: "$filteredVariant.sizes",
-          },
-        },
-        productTitle: "$product.title",
-        productPrice: "$product.price",
-      },
-    },
-    {
-      $group: {
-        _id: "$_id",
-        userId: { $first: "$userId" },
-        items: {
-          $push: {
-            productId: "$item.productId",
-            size: "$item.size",
-            stock: "$item.stock",
-            variant: "$item.variant",
-            productTitle: "$productTitle",
-            productPrice: "$productPrice",
-          },
-        },
-      },
-    },
-  ]);
-
-  if (!cart || cart.length === 0) {
-    return res.status(404).json({ message: "Cart not found" });
-  }
-
-  res.status(200).json(cart[0]); // aggregation بيرجع array فبنرجع أول عنصر
+  const cart = await GuestCart.clearCart(sessionId);
+  return res
+    .status(200)
+    .json({ message: "Cart cleared", cart, type: "guest", sessionId });
 });
 
 module.exports = {
   getCart,
-};
-
-module.exports = {
-  addToCart,
-  getCart,
+  addItem,
+  updateItemQuantity,
+  removeItem,
+  clearCart,
 };

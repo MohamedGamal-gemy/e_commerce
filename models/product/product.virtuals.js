@@ -21,24 +21,24 @@ module.exports = (schema) => {
     match: { isDefault: true },
   });
 
-  schema.virtual("allColors").get(function () {
-    if (!this.populated("variants")) return [];
-    return [...new Set(this.variants.map((v) => v.color.name))];
-  });
+  // schema.virtual("allColors").get(function () {
+  //   if (!this.populated("variants")) return [];
+  //   return [...new Set(this.variants.map((v) => v.color.name))];
+  // });
 
-  schema.virtual("allSizes").get(function () {
-    const sizes = new Set();
-    if (this.populated("variants")) {
-      this.variants.forEach((v) => v.sizes.forEach((s) => sizes.add(s.size)));
-    }
-    return Array.from(sizes);
-  });
+  // schema.virtual("allSizes").get(function () {
+  //   const sizes = new Set();
+  //   if (this.populated("variants")) {
+  //     this.variants.forEach((v) => v.sizes.forEach((s) => sizes.add(s.size)));
+  //   }
+  //   return Array.from(sizes);
+  // });
 
-  schema.virtual("colorPreviews").get(function () {
-    if (!this.populated("variants")) return [];
-    return this.variants.map((v) => ({
-      color: v.color,
-      previewImage: v.images?.[0]?.url || null,
-    }));
-  });
+  // schema.virtual("colorPreviews").get(function () {
+  //   if (!this.populated("variants")) return [];
+  //   return this.variants.map((v) => ({
+  //     color: v.color,
+  //     previewImage: v.images?.[0]?.url || null,
+  //   }));
+  // });
 };

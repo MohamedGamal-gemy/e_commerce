@@ -22,13 +22,15 @@ const ProductSchema = new mongoose.Schema(
     discountStart: Date,
     discountEnd: Date,
     discountIsActive: { type: Boolean, default: false },
-
+    //
     productType: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "ProductType",
       index: true,
       required: true,
     },
+    mainImage: String,
+    colors: [{ name: String, value: String, image: String }],
 
     // Variants
     variants: [{ type: mongoose.Schema.Types.ObjectId, ref: "ProductVariant" }],

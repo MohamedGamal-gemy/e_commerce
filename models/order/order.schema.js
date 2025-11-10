@@ -15,6 +15,11 @@ const orderItemSchema = new mongoose.Schema(
     color: { type: String },
     quantity: { type: Number, required: true, min: 1 },
     price: { type: Number, required: true },
+    productSnapshot: {
+      title: String,
+      image: String,
+      color: String,
+    },
   },
   { _id: false }
 );
@@ -26,16 +31,24 @@ const OrderSchema = new mongoose.Schema(
       ref: "User",
       required: true,
     },
+    sessionId: { type: String },
     items: [orderItemSchema],
 
     shippingAddress: {
-      fullName: { type: String, required: true },
-      addressLine1: { type: String, required: true },
+      fullName: { type: String },
+      addressLine1: { type: String },
       addressLine2: { type: String },
-      city: { type: String, required: true },
-      country: { type: String, required: true },
-      phone: { type: String, required: true },
+      city: { type: String },
+      country: { type: String },
+      phone: { type: String },
       postalCode: { type: String },
+    },
+
+    billingDetails: {
+      fullName: String,
+      email: String,
+      phone: String,
+      address: String,
     },
 
     payment: {
@@ -52,9 +65,12 @@ const OrderSchema = new mongoose.Schema(
       transactionId: { type: String },
     },
 
+    currency: { type: String, default: "EGP" },
+    subtotal: { type: Number, default: 0 },
     totalPrice: { type: Number, required: true },
     shippingPrice: { type: Number, default: 0 },
     discount: { type: Number, default: 0 },
+    stripeSessionId: { type: String },
 
     status: {
       type: String,

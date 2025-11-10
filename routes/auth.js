@@ -2,11 +2,13 @@ const express = require("express");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const expressAsyncHandler = require("express-async-handler");
-const {
-  validateRegisterUser,
-  User,
-  validateLoginUser,
-} = require("../models/userModel");
+const { validateRegisterUser, validateLoginUser } = require("../validations/userValidation");
+const User = require("../models/user");
+// const {
+//   validateRegisterUser,
+//   User,
+//   validateLoginUser,
+// } = require("../models/userModel");
 
 const router = express.Router();
 
@@ -16,53 +18,85 @@ const router = express.Router();
  * @method POST
  * @access public
  */
+// router.post(
+//   "/register",
+//   expressAsyncHandler(async (req, res) => {
+//     const { email, username, password } = req.body;
+
+//     // Validate input
+//     const { error } = validateRegisterUser(req.body);
+//     if (error) {
+//       return res.status(400).json({ message: error.details[0].message });
+//     }
+
+//     // Check if user already exists
+//     let user = await User.findOne({ email });
+//     if (user) {
+//       return res
+//         .status(400)
+//         .json({ message: "This email is already registered." });
+//     }
+
+//     // Hash password
+//     // const salt = await bcrypt.genSalt(10);
+//     // const passwordHash = await bcrypt.hash(password, salt);
+
+//     // Create and save user
+// user = new User({ email, username, password });
+//     const savedUser = await user.save();
+//     const token = user.generateToken();
+
+//     const userObj = savedUser.toObject();
+//     delete userObj.password;
+
+//     // Set token in cookie
+//     res.cookie("token", token, {
+//       httpOnly: true, // Prevent client-side access to the cookie
+//       secure: process.env.NODE_ENV === "production", // Use secure in production
+//       maxAge: 24 * 60 * 60 * 1000, // Cookie expiry: 1 day
+//       sameSite: "lax", // Prevent CSRF
+//     });
+
+//     res.status(201).json({
+//       ...userObj,
+//       message: "Registration successful.",
+//     });
+//   })
+// );
+
 router.post(
   "/register",
   expressAsyncHandler(async (req, res) => {
     const { email, username, password } = req.body;
 
-    // Validate input
     const { error } = validateRegisterUser(req.body);
-    if (error) {
+    if (error)
       return res.status(400).json({ message: error.details[0].message });
-    }
 
-    // Check if user already exists
     let user = await User.findOne({ email });
-    if (user) {
+    if (user)
       return res
         .status(400)
         .json({ message: "This email is already registered." });
-    }
 
-    // Hash password
-    const salt = await bcrypt.genSalt(10);
-    const passwordHash = await bcrypt.hash(password, salt);
+    user = new User({ email, username, password });
+    await user.save();
 
-    // Create and save user
-    user = new User({
-      email,
-      username,
-      password: passwordHash,
-    });
-
-    const savedUser = await user.save();
     const token = user.generateToken();
-
-    const userObj = savedUser.toObject();
+    const userObj = user.toObject();
     delete userObj.password;
 
-    // Set token in cookie
     res.cookie("token", token, {
-      httpOnly: true, // Prevent client-side access to the cookie
-      secure: process.env.NODE_ENV === "production", // Use secure in production
-      maxAge: 24 * 60 * 60 * 1000, // Cookie expiry: 1 day
-      sameSite: "lax", // Prevent CSRF
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      path: "/",
+      sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+      maxAge: 24 * 60 * 60 * 1000,
     });
 
     res.status(201).json({
-      ...userObj,
       message: "Registration successful.",
+      user: userObj,
     });
   })
 );
@@ -77,50 +111,102 @@ router.post("/logout", (req, res) => {
   return res.status(200).json({ message: "Logout successful" });
 });
 /**
- * @description Login User
- * @route /api/auth/login
- * @method POST
- * @access public
- */
+//  * @description Login User
+//  * @route /api/auth/login
+//  * @method POST
+//  * @access public
+//  */
+// router.post(
+//   "/login",
+//   expressAsyncHandler(async (req, res) => {
+//     const { error } = validateLoginUser(req.body);
+
+//     if (error) {
+//       return res.status(400).json({ message: error.details[0].message });
+//     }
+
+//     let user = await User.findOne({ email: req.body.email });
+//     if (!user) {
+//       return res.status(400).json({ message: "Invalid email" });
+//     }
+
+//     const isPasswordMatch = await bcrypt.compare(
+//       req.body.password,
+//       user.password
+//     );
+//     if (!isPasswordMatch) {
+//       return res.status(400).json({ message: "Invalid password" });
+//     }
+
+//     const token = user.generateToken();
+//     const { password, ...other } = user._doc;
+
+//     // Set token in cookie
+//     res.cookie("token", token, {
+//       httpOnly: false, // Prevent client-side access to the cookie
+//       // httpOnly: true, // Prevent client-side access to the cookie
+//       // secure: process.env.NODE_ENV === "production", // Use secure in production
+//       secure: false, // Use secure in production
+//       maxAge: 24 * 60 * 60 * 1000, // Cookie expiry: 1 day
+//       // sameSite: "strict", // Prevent CSRFh
+//       sameSite: "lax", // Prevent CSRF
+//     });
+
+//     res.status(200).json({ ...other, message: "Login successful" });
+//   })
+// );
+
 router.post(
   "/login",
   expressAsyncHandler(async (req, res) => {
-    const { error } = validateLoginUser(req.body);
+    const { email, password } = req.body;
 
+    // ✅ Validate input
+    const { error } = validateLoginUser(req.body);
     if (error) {
       return res.status(400).json({ message: error.details[0].message });
     }
 
-    let user = await User.findOne({ email: req.body.email });
+    // ✅ Find user (include password since it's select: false)
+    const user = await User.findOne({ email }).select("+password");
     if (!user) {
-      return res.status(400).json({ message: "Invalid email" });
+      return res.status(400).json({ message: "Invalid email or password" });
     }
 
-    const isPasswordMatch = await bcrypt.compare(
-      req.body.password,
-      user.password
-    );
+    // ✅ Compare password
+    const isPasswordMatch = await user.comparePassword(password);
     if (!isPasswordMatch) {
-      return res.status(400).json({ message: "Invalid password" });
+      return res.status(400).json({ message: "Invalid email or password" });
     }
 
+    // ✅ Generate JWT
     const token = user.generateToken();
-    const { password, ...other } = user._doc;
 
-    // Set token in cookie
+    // ✅ Remove password before sending user
+    const userObj = user.toObject();
+    delete userObj.password;
+
+    // ✅ Set token cookie
     res.cookie("token", token, {
-      httpOnly: false, // Prevent client-side access to the cookie
-      // httpOnly: true, // Prevent client-side access to the cookie
-      // secure: process.env.NODE_ENV === "production", // Use secure in production
-      secure: false, // Use secure in production
-      maxAge: 24 * 60 * 60 * 1000, // Cookie expiry: 1 day
-      // sameSite: "strict", // Prevent CSRFh
-      sameSite: "lax", // Prevent CSRF
+      httpOnly: true, // prevent client JS access
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      maxAge: 24 * 60 * 60 * 1000, // 1 day
     });
 
-    res.status(200).json({ ...other, message: "Login successful" });
+    // ✅ Update lastLogin (optional, for analytics)
+    user.lastLogin = new Date();
+    await user.save({ validateBeforeSave: false });
+
+    // ✅ Response
+    res.status(200).json({
+      message: "Login successful",
+      user: userObj,
+      token,
+    });
   })
 );
+
 //
 
 router.get("/check-auth", (req, res) => {

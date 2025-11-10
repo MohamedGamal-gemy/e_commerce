@@ -2,7 +2,8 @@ const express = require("express");
 const Stripe = require("stripe");
 const bodyParser = require("body-parser");
 const Order = require("../models/Order");
-const ProductVariant = require("../models/variantsModel");
+const ProductVariant = require("../models/productVariant");
+const Product = require("../models/Product");
 
 const router = express.Router();
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
@@ -36,19 +37,27 @@ router.post(
         }
 
         // 🟢 تحديث حالة الطلب
-        order.paymentStatus = "paid";
+        order.payment = order.payment || {};
+        order.payment.status = "paid";
+        order.isPaid = true;
+        order.paidAt = new Date();
         order.status = "processing";
         await order.save();
 
-        // 📦 خصم الـ stock
+        // 📦 خصم الـ stock + 📈 تحديث مشتريات المنتج
         for (const item of order.items) {
-          await ProductVariant.updateOne(
-            {
-              _id: item.variantId,
-              "sizes.size": item.size,
-            },
-            { $inc: { "sizes.$.stock": -item.quantity } } // ⬅️ خصم الكمية المطلوبة
-          );
+          if (item.variant) {
+            await ProductVariant.updateOne(
+              { _id: item.variant, "sizes.size": item.size },
+              { $inc: { "sizes.$.stock": -item.quantity } }
+            );
+          }
+          if (item.product) {
+            await Product.updateOne(
+              { _id: item.product },
+              { $inc: { purchases: item.quantity, totalStock: -item.quantity } }
+            );
+          }
         }
 
         console.log("✅ Stock updated successfully for order:", order._id);
