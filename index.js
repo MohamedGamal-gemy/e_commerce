@@ -23,12 +23,23 @@ connectToDB();
 app.use(express.json());
 app.use(cookieParser());
 
+// app.use(
+//   cors({
+//     origin: ["http://localhost:5000", "http://localhost:3000"],
+//     credentials: true,
+//     methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+//     // allowedHeaders: ["Content-Type", "Authorization"],
+//   })
+// );
+
 app.use(
   cors({
-    origin: ["http://localhost:5000", "http://localhost:3000"],
+    origin: [
+      "http://localhost:5000",
+      "http://localhost:3000",
+      "https://YOUR_FRONTEND_REPLIT_URL.repl.co",
+    ],
     credentials: true,
-    methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
-    // allowedHeaders: ["Content-Type", "Authorization"],
   })
 );
 
@@ -86,5 +97,10 @@ app.use(notFound);
 app.use(errorHandler);
 
 // ✅ Start server
+// const PORT = process.env.PORT || 7000;
+// app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+
 const PORT = process.env.PORT || 7000;
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+app.listen(PORT, "0.0.0.0", () =>
+  console.log(`Server running on port ${PORT}`)
+);
