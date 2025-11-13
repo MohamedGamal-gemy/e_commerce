@@ -19,10 +19,6 @@ router.post(
   // protect,
   // restrictTo("admin", "vendor"),
   upload.any(),
-  // upload.fields([
-  //   { name: "mainImage", maxCount: 1 },
-  //   { name: "variantImages", maxCount: 20 },
-  // ]),
   createProduct
 );
 
@@ -32,7 +28,6 @@ router.post(
  * @access  Public
  */
 // router.get("/", getProducts);
-
 
 // GET /api/products
 router.get(
@@ -46,7 +41,11 @@ router.get(
     const query = { isAvailable: true, status: "active" };
 
     const products = await Product.find(query)
-      .select("title price mainImage colors sku slug searchableText rating finalPrice") // فقط الحقول المطلوبة للـ list card
+      // .select("title price mainImage colors sku slug searchableText rating finalPrice") // فقط الحقول المطلوبة للـ list card
+      .select(
+        "title price mainImage colors sku slug searchableText rating finalPrice productTypeName"
+      )
+
       .skip(skip)
       .limit(limit)
       .sort({ createdAt: -1 }); // ترتيب حسب الأحدث أولاً
@@ -65,7 +64,6 @@ router.get(
     });
   })
 );
-
 
 /**
  * @desc    Update a product with variants (full update)

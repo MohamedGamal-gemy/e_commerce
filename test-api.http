@@ -1,6 +1,6 @@
 
 ### Get All Product Types
-GET  http://localhost:9000/api/products
+GET  http://localhost:9000/api/products/neutral-signature-soft-touch-wool-rich-epsom-coat-24f09c
 ### Delete
 DELETE  http://localhost:9000/api/products/6911529ef6af95a7c8c2e15d
 
