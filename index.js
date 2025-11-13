@@ -78,6 +78,10 @@ const loginLimiter = rateLimit({
 // app.use("/api/auth/login", );
 
 // ✅ Routes
+// Default route for root
+app.get("/", (req, res) => {
+  res.status(200).json({ message: "API is running 🚀" });
+});
 
 // app.use("/api/stripe", require("./routes/stripe"));
 // app.use("/api/address", require("./routes/addressRoutes"));
