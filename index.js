@@ -37,7 +37,7 @@ app.use(
     origin: [
       "http://localhost:5000",
       "http://localhost:3000",
-      "https://YOUR_FRONTEND_REPLIT_URL.repl.co",
+      // "https://YOUR_FRONTEND_REPLIT_URL.repl.co",
     ],
     credentials: true,
   })

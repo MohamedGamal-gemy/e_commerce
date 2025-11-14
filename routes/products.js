@@ -7,6 +7,7 @@ const {
   patchProduct,
   deleteProduct,
   getProduct,
+  getQuickViewProduct,
 } = require("../controllers/products.controller");
 const asyncHandler = require("express-async-handler");
 const { protect, restrictTo } = require("../middlewares/auth");
@@ -65,6 +66,11 @@ router.get(
   })
 );
 
+//
+
+router.get("/quick-view/:id", getQuickViewProduct);
+
+//
 /**
  * @desc    Update a product with variants (full update)
  * @route   PUT /api/products/:id

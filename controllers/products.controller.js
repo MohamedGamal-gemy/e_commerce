@@ -27,7 +27,9 @@ exports.createProduct = async (req, res) => {
       try {
         variants = JSON.parse(variants);
       } catch {
-        return res.status(400).json({ success: false, message: "Invalid variants JSON format." });
+        return res
+          .status(400)
+          .json({ success: false, message: "Invalid variants JSON format." });
       }
     }
 
@@ -191,6 +193,67 @@ exports.getProduct = asyncHandler(async (req, res, next) => {
     .status(200)
     .json(new ApiResponse(200, product, "Product retrieved successfully"));
 });
+
+//
+exports.getQuickViewProduct = asyncHandler(async (req, res, next) => {
+  const { id } = req.params;
+
+  if (!id) {
+    return next(new ApiError("Invalid product ID", 400));
+  }
+
+  const product = await Product.aggregate([
+    // 1) match by _id
+    { $match: { _id: new mongoose.Types.ObjectId(id) } },
+
+    // 2) bring variants
+    {
+      $lookup: {
+        from: "productvariants",
+        localField: "_id",
+        foreignField: "productId",
+        as: "variants",
+      },
+    },
+
+    // 3) project fields we want
+    {
+      $project: {
+        title: 1,
+        price: 1,
+        description: 1,
+        productType: 1,
+        images: 1, // لو عندك صور اساسية للمنتج
+
+        variants: {
+          $map: {
+            input: "$variants",
+            as: "v",
+            in: {
+              _id: "$$v._id",
+              color: "$$v.color",
+              sizes: "$$v.sizes",
+              isDefault: "$$v.isDefault",
+              images: { $slice: ["$$v.images", 4] }, // أول 4 صور فقط
+            },
+          },
+        },
+      },
+    },
+  ]);
+
+  if (!product || product.length === 0) {
+    return next(new ApiError("Product not found", 404));
+  }
+
+  res
+    .status(200)
+    .json(
+      new ApiResponse(200, product[0], "Quickview product fetched successfully")
+    );
+});
+
+//
 /**
  * @desc Update a product with variants
  * @route PUT /api/products/:id
@@ -232,7 +295,6 @@ exports.updateProduct = asyncHandler(async (req, res, next) => {
   await updateProductAndVariants(id, productData, variants, filesByField);
 
   // 5️⃣ Invalidate cache after updating product
-  
 
   // 6️⃣ Fetch and return the updated product with populated variants
   const populatedProduct = await Product.findById(id)
@@ -300,7 +362,6 @@ exports.patchProduct = asyncHandler(async (req, res, next) => {
   await updateProductAndVariants(id, productData, variants, filesByField);
 
   // 6️⃣ Invalidate cache after updating product
-  
 
   // 7️⃣ Fetch and return the updated product with populated variants
   const populatedProduct = await Product.findById(id)
@@ -332,7 +393,6 @@ exports.deleteProduct = asyncHandler(async (req, res, next) => {
   await deleteProductAndVariants(id);
 
   // 2️⃣ Invalidate cache after deleting product
-  
 
   res
     .status(200)
