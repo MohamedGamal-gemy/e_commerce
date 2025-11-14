@@ -7,7 +7,7 @@ const Stripe = require("stripe");
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 const Cart = require("../models/cart");
 const GuestCart = require("../models/guestCart");
-const Order = require("../models/Order");
+const Order = require("../models/order");
 const ProductVariant = require("../models/productVariant");
 const { protect } = require("../middlewares/protect");
 
