@@ -93,7 +93,7 @@ app.use("/api/cart", require("./routes/cart"));
 app.use("/api/checkout", require("./routes/checkout"));
 // app.use("/api/users", require("./routes/userRoutes"));
 app.use("/api/products", require("./routes/products"));
-// app.use("/api/reviews", require("./routes/reviewRoutes"));
+app.use("/api/reviews", require("./routes/reviewRoutes"));
 app.use("/api/auth", require("./routes/auth"));
 
 // ✅ Error handling

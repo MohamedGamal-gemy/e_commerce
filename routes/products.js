@@ -31,6 +31,41 @@ router.post(
 // router.get("/", getProducts);
 
 // GET /api/products
+// router.get(
+//   "/",
+//   asyncHandler(async (req, res) => {
+//     const page = parseInt(req.query.page || "1");
+//     const limit = parseInt(req.query.limit || "20");
+//     const skip = (page - 1) * limit;
+
+//     // جلب المنتجات المتاحة فقط
+//     const query = { isAvailable: true, status: "active" };
+
+//     const products = await Product.find(query)
+//       // .select("title price mainImage colors sku slug searchableText rating finalPrice") // فقط الحقول المطلوبة للـ list card
+//       .select(
+//         "title price mainImage colors sku slug searchableText rating finalPrice productTypeName"
+//       )
+
+//       .skip(skip)
+//       .limit(limit)
+//       .sort({ createdAt: -1 }); // ترتيب حسب الأحدث أولاً
+
+//     const total = await Product.countDocuments(query);
+
+//     res.json({
+//       success: true,
+//       data: products,
+//       pagination: {
+//         page,
+//         limit,
+//         totalPages: Math.ceil(total / limit),
+//         total,
+//       },
+//     });
+//   })
+// );
+
 router.get(
   "/",
   asyncHandler(async (req, res) => {
@@ -38,18 +73,21 @@ router.get(
     const limit = parseInt(req.query.limit || "20");
     const skip = (page - 1) * limit;
 
-    // جلب المنتجات المتاحة فقط
+    // الفلتر الأساسي
     const query = { isAvailable: true, status: "active" };
 
+    // لو في فلتر productTypeName ضيفه في query
+    if (req.query.productTypeName) {
+      query.productTypeName = req.query.productTypeName;
+    }
+
     const products = await Product.find(query)
-      // .select("title price mainImage colors sku slug searchableText rating finalPrice") // فقط الحقول المطلوبة للـ list card
       .select(
         "title price mainImage colors sku slug searchableText rating finalPrice productTypeName"
       )
-
       .skip(skip)
       .limit(limit)
-      .sort({ createdAt: -1 }); // ترتيب حسب الأحدث أولاً
+      .sort({ createdAt: -1 });
 
     const total = await Product.countDocuments(query);
 

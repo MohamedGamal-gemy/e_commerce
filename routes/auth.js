@@ -2,7 +2,10 @@ const express = require("express");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const expressAsyncHandler = require("express-async-handler");
-const { validateRegisterUser, validateLoginUser } = require("../validations/userValidation");
+const {
+  validateRegisterUser,
+  validateLoginUser,
+} = require("../validations/userValidation");
 const User = require("../models/user");
 // const {
 //   validateRegisterUser,
@@ -86,12 +89,19 @@ router.post(
     const userObj = user.toObject();
     delete userObj.password;
 
+    // res.cookie("token", token, {
+    //   httpOnly: true,
+    //   secure: process.env.NODE_ENV === "production",
+    //   path: "/",
+    //   sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+    //   maxAge: 24 * 60 * 60 * 1000,
+    // });
     res.cookie("token", token, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      path: "/",
+      secure: process.env.NODE_ENV === "production", // على localhost خليها false
       sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
-      maxAge: 24 * 60 * 60 * 1000,
+      path: "/",
+      maxAge: 24 * 60 * 60 * 1000, // يوم واحد
     });
 
     res.status(201).json({
@@ -187,11 +197,19 @@ router.post(
     delete userObj.password;
 
     // ✅ Set token cookie
+    // res.cookie("token", token, {
+    //   httpOnly: true, // prevent client JS access
+    //   secure: process.env.NODE_ENV === "production",
+    //   sameSite: "lax",
+    //   maxAge: 24 * 60 * 60 * 1000, // 1 day
+    // });
+
     res.cookie("token", token, {
-      httpOnly: true, // prevent client JS access
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "lax",
-      maxAge: 24 * 60 * 60 * 1000, // 1 day
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production", // على localhost خليها false
+      sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+      path: "/",
+      maxAge: 24 * 60 * 60 * 1000, // يوم واحد
     });
 
     // ✅ Update lastLogin (optional, for analytics)

@@ -180,7 +180,7 @@ exports.getProduct = asyncHandler(async (req, res, next) => {
   // }
 
   const product = await Product.find({ slug })
-    .select("title price  slug description images productType variants")
+    .select("title price rating numReviews  slug description images productType variants")
 
     .populate("variants")
     .populate("productType", "name");
