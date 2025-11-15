@@ -76,9 +76,19 @@ router.get(
     // الفلتر الأساسي
     const query = { isAvailable: true, status: "active" };
 
-    // لو في فلتر productTypeName ضيفه في query
+    // ⬅️ دعم أكثر من productTypeName
     if (req.query.productTypeName) {
-      query.productTypeName = req.query.productTypeName;
+      let types = req.query.productTypeName;
+
+      // لو جاية كـ string فيها فاصلة → حوّلها Array
+      if (typeof types === "string") {
+        types = types.split(",").map((t) => t.trim());
+      }
+
+      // لو Array استخدم $in
+      if (Array.isArray(types)) {
+        query.productTypeName = { $in: types };
+      }
     }
 
     const products = await Product.find(query)
