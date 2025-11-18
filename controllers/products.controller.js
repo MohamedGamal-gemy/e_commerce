@@ -83,87 +83,114 @@ exports.createProduct = async (req, res) => {
  * @access Public
  */
 
-exports.getProducts = asyncHandler(async (req, res) => {
-  const {
-    color,
-    productTypeName,
-    status,
-    minPrice,
-    maxPrice,
-    search,
-    page = 1,
-    limit = 3,
-  } = req.query;
+exports.getProducts = async (req, res) => {
+  try {
+    const { productTypeName, search } = req.query;
 
-  const filter = {};
-  filter.status = status || "active";
-  filter.isAvailable = true;
+    let filter = {};
 
-  // 🧩 Filter by productTypeName (comma separated)
-  if (productTypeName) {
-    const typeNames = productTypeName.split(",").map((n) => n.trim());
-    filter.productTypeName = typeNames;
-  }
-
-  // 💰 Price range filter
-  if (minPrice || maxPrice) {
-    filter.price = {};
-    if (minPrice) filter.price.$gte = Number(minPrice);
-    if (maxPrice) filter.price.$lte = Number(maxPrice);
-  }
-
-  // 🎨 Color filter (multiple colors supported)
-  if (color) {
-    const colorValues = color.split(",").map((c) => c.trim());
-
-    // ⬇️ Get all productIds that have any of the given colors
-    const variantProductIds = await ProductVariant.find({
-      "color.name": { $in: colorValues.map((c) => new RegExp(`^${c}$`, "i")) },
-    }).distinct("productId");
-
-    if (variantProductIds.length > 0) {
-      filter._id = { $in: variantProductIds };
-    } else {
-      return res.json({
-        count: 0,
-        total: 0,
-        page: Number(page),
-        limit: Number(limit),
-        totalPages: 0,
-        products: [],
-      });
+    // فلتر أكتر من نوع productTypeName (Comma Separated)
+    if (productTypeName) {
+      const types = productTypeName.split(",").map((t) => t.trim());
+      filter.productTypeName = { $in: types };
     }
+
+    // فلتر الـ Search
+    if (search) {
+      const searchRegex = new RegExp(search, "i"); // case-insensitive
+      filter.searchableText = searchRegex;
+    }
+
+    const products = await Product.find(filter);
+
+    res.json(products);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Server Error" });
   }
+};
 
-  // 🔍 Text search
-  if (search) filter.$text = { $search: search };
+// exports.getProducts = asyncHandler(async (req, res) => {
+//   const {
+//     color,
+//     productTypeName,
+//     status,
+//     minPrice,
+//     maxPrice,
+//     search,
+//     page = 1,
+//     limit = 3,
+//   } = req.query;
 
-  // 📄 Pagination setup
-  const pageNum = Math.max(1, Number(page));
-  const limitNum = Math.max(1, Math.min(100, Number(limit)));
-  const skip = (pageNum - 1) * limitNum;
+//   const filter = {};
+//   filter.status = status || "active";
+//   filter.isAvailable = true;
 
-  const options = {
-    sort: { createdAt: -1 },
-    skip,
-    limit: limitNum,
-    select:
-      "title price slug rating numReviews totalStock status isAvailable createdAt",
-  };
+//   // 🧩 Filter by productTypeName (comma separated)
+//   if (productTypeName) {
+//     const typeNames = productTypeName.split(",").map((n) => n.trim());
+//     filter.productTypeName = typeNames;
+//   }
 
-  // 🚀 Use static method
-  const products = await Product.getProductsWithColorPreviews(filter, options);
-  const total = products.length;
+//   // 💰 Price range filter
+//   if (minPrice || maxPrice) {
+//     filter.price = {};
+//     if (minPrice) filter.price.$gte = Number(minPrice);
+//     if (maxPrice) filter.price.$lte = Number(maxPrice);
+//   }
 
-  res.json({
-    count: products.length,
-    total,
-    page: pageNum,
-    limit: limitNum,
-    totalPages: Math.ceil(total / limitNum),
-    products,
-  });
-});
+//   // 🎨 Color filter (multiple colors supported)
+//   if (color) {
+//     const colorValues = color.split(",").map((c) => c.trim());
+
+//     // ⬇️ Get all productIds that have any of the given colors
+//     const variantProductIds = await ProductVariant.find({
+//       "color.name": { $in: colorValues.map((c) => new RegExp(`^${c}$`, "i")) },
+//     }).distinct("productId");
+
+//     if (variantProductIds.length > 0) {
+//       filter._id = { $in: variantProductIds };
+//     } else {
+//       return res.json({
+//         count: 0,
+//         total: 0,
+//         page: Number(page),
+//         limit: Number(limit),
+//         totalPages: 0,
+//         products: [],
+//       });
+//     }
+//   }
+
+//   // 🔍 Text search
+//   if (search) filter.$text = { $search: search };
+
+//   // 📄 Pagination setup
+//   const pageNum = Math.max(1, Number(page));
+//   const limitNum = Math.max(1, Math.min(100, Number(limit)));
+//   const skip = (pageNum - 1) * limitNum;
+
+//   const options = {
+//     sort: { createdAt: -1 },
+//     skip,
+//     limit: limitNum,
+//     select:
+//       "title price slug rating numReviews totalStock status isAvailable createdAt",
+//   };
+
+//   // 🚀 Use static method
+//   const products = await Product.getProductsWithColorPreviews(filter, options);
+//   const total = products.length;
+
+//   res.json({
+//     count: products.length,
+//     total,
+//     page: pageNum,
+//     limit: limitNum,
+//     totalPages: Math.ceil(total / limitNum),
+//     products,
+//   });
+// });
 /**
  * @desc Get single product by ID with populated variants and productType
  * @route GET /api/products/:id
@@ -180,7 +207,9 @@ exports.getProduct = asyncHandler(async (req, res, next) => {
   // }
 
   const product = await Product.find({ slug })
-    .select("title price rating numReviews  slug description images productType variants")
+    .select(
+      "title price rating numReviews  slug description images productType variants"
+    )
 
     .populate("variants")
     .populate("productType", "name");
@@ -252,6 +281,37 @@ exports.getQuickViewProduct = asyncHandler(async (req, res, next) => {
       new ApiResponse(200, product[0], "Quickview product fetched successfully")
     );
 });
+
+//
+
+exports.getPriceRange = async (req, res) => {
+  try {
+    let query = {};
+
+    // filters
+    if (req.query.type)
+      query.productTypeName = { $in: req.query.type.split(",") };
+    if (req.query.color)
+      query["colors.name"] = { $in: req.query.color.split(",") };
+    if (req.query.search)
+      query.searchableText = { $regex: req.query.search, $options: "i" };
+
+    const result = await Product.aggregate([
+      { $match: query },
+      {
+        $group: {
+          _id: null,
+          minPrice: { $min: "$price" },
+          maxPrice: { $max: "$price" },
+        },
+      },
+    ]);
+
+    res.json(result[0] || { minPrice: 0, maxPrice: 0 });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
 
 //
 /**

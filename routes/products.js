@@ -8,6 +8,7 @@ const {
   deleteProduct,
   getProduct,
   getQuickViewProduct,
+  getPriceRange,
 } = require("../controllers/products.controller");
 const asyncHandler = require("express-async-handler");
 const { protect, restrictTo } = require("../middlewares/auth");
@@ -30,7 +31,7 @@ router.post(
  */
 // router.get("/", getProducts);
 
-// GET /api/products
+//
 // router.get(
 //   "/",
 //   asyncHandler(async (req, res) => {
@@ -38,24 +39,77 @@ router.post(
 //     const limit = parseInt(req.query.limit || "20");
 //     const skip = (page - 1) * limit;
 
-//     // جلب المنتجات المتاحة فقط
+//     const { productTypeName, search, color, minPrice, maxPrice } = req.query;
+
+//     // Base Query
 //     const query = { isAvailable: true, status: "active" };
 
-//     const products = await Product.find(query)
-//       // .select("title price mainImage colors sku slug searchableText rating finalPrice") // فقط الحقول المطلوبة للـ list card
-//       .select(
-//         "title price mainImage colors sku slug searchableText rating finalPrice productTypeName"
-//       )
+//     // Product Types Filter
+//     if (productTypeName) {
+//       const types = productTypeName.split(",").map((t) => t.trim());
+//       query.productTypeName = { $in: types };
+//     }
 
+//     // Colors Filter
+//     if (color) {
+//       const colors = color.split(",").map((c) => c.trim());
+//       query["colors.name"] = { $in: colors };
+//     }
+
+//     // Search Filter
+//     if (search) {
+//       query.searchableText = new RegExp(search, "i");
+//     }
+
+//     // Price Range Filter
+//     if (minPrice || maxPrice) {
+//       query.price = {};
+//       if (minPrice) query.price.$gte = Number(minPrice);
+//       if (maxPrice) query.price.$lte = Number(maxPrice);
+//     }
+
+//     // --- GET PRODUCTS & COUNT ---
+//     const productsQuery = Product.find(query)
+//       .select(
+//         "title price mainImage colors sku slug searchableText rating productTypeName"
+//       )
 //       .skip(skip)
 //       .limit(limit)
-//       .sort({ createdAt: -1 }); // ترتيب حسب الأحدث أولاً
+//       .sort({ createdAt: -1 });
 
-//     const total = await Product.countDocuments(query);
+//     const totalQuery = Product.countDocuments(query);
 
+//     // --- GET MIN/MAX PRICE BASED ON SAME FILTERS ---
+//     const priceAggQuery = Product.aggregate([
+//       { $match: query },
+//       {
+//         $group: {
+//           _id: null,
+//           min: { $min: "$price" },
+//           max: { $max: "$price" },
+//         },
+//       },
+//     ]);
+
+//     const [products, total, priceRangeResult] = await Promise.all([
+//       productsQuery,
+//       totalQuery,
+//       priceAggQuery,
+//     ]);
+
+//     const priceRange =
+//       priceRangeResult.length > 0
+//         ? {
+//             min: priceRangeResult[0].min,
+//             max: priceRangeResult[0].max,
+//           }
+//         : { min: 0, max: 0 };
+
+//     // --- RESPONSE ---
 //     res.json({
 //       success: true,
 //       data: products,
+//       priceRange,
 //       pagination: {
 //         page,
 //         limit,
@@ -73,37 +127,98 @@ router.get(
     const limit = parseInt(req.query.limit || "20");
     const skip = (page - 1) * limit;
 
-    // الفلتر الأساسي
+    const { productTypeName, search, color, minPrice, maxPrice } = req.query;
+
+    // ----- Build Main Query -----
     const query = { isAvailable: true, status: "active" };
 
-    // ⬅️ دعم أكثر من productTypeName
-    if (req.query.productTypeName) {
-      let types = req.query.productTypeName;
-
-      // لو جاية كـ string فيها فاصلة → حوّلها Array
-      if (typeof types === "string") {
-        types = types.split(",").map((t) => t.trim());
-      }
-
-      // لو Array استخدم $in
-      if (Array.isArray(types)) {
-        query.productTypeName = { $in: types };
-      }
+    if (productTypeName) {
+      const types = productTypeName.split(",").map((t) => t.trim());
+      query.productTypeName = { $in: types };
     }
 
-    const products = await Product.find(query)
+    if (color) {
+      const colors = color.split(",").map((c) => c.trim());
+      query["colors.name"] = { $in: colors };
+    }
+
+    if (search) {
+      query.searchableText = new RegExp(search, "i");
+    }
+
+    if (minPrice || maxPrice) {
+      query.price = {};
+      if (minPrice) query.price.$gte = Number(minPrice);
+      if (maxPrice) query.price.$lte = Number(maxPrice);
+    }
+
+    // ======= PARALLEL QUERIES =======
+
+    const productsQuery = Product.find(query)
       .select(
-        "title price mainImage colors sku slug searchableText rating finalPrice productTypeName"
+        "title price mainImage colors sku slug searchableText rating productTypeName"
       )
       .skip(skip)
       .limit(limit)
       .sort({ createdAt: -1 });
 
-    const total = await Product.countDocuments(query);
+    const totalQuery = Product.countDocuments(query);
+
+    const priceRangeAgg = Product.aggregate([
+      { $match: query },
+      {
+        $group: {
+          _id: null,
+          min: { $min: "$price" },
+          max: { $max: "$price" },
+        },
+      },
+    ]);
+
+    // ----- Colors aggregation (remove color filter only) -----
+    const colorMatch = { ...query };
+    if (color) delete colorMatch["colors.name"];
+
+    const colorsAgg = Product.aggregate([
+      { $match: colorMatch },
+      { $unwind: "$colors" },
+      {
+        $group: {
+          _id: "$colors.name",
+          value: { $first: "$colors.value" },
+          countProducts: { $sum: 1 },
+        },
+      },
+      { $sort: { _id: 1 } },
+      {
+        $project: {
+          _id: 0,
+          name: "$_id",
+          value: 1,
+          countProducts: 1,
+        },
+      },
+    ]);
+
+    const [products, total, priceRangeResult, colors] = await Promise.all([
+      productsQuery,
+      totalQuery,
+      priceRangeAgg,
+      colorsAgg,
+    ]);
+
+    const priceRange =
+      priceRangeResult.length > 0
+        ? { min: priceRangeResult[0].min, max: priceRangeResult[0].max }
+        : { min: 0, max: 0 };
 
     res.json({
       success: true,
       data: products,
+      filters: {
+        colors,
+        priceRange,
+      },
       pagination: {
         page,
         limit,
@@ -115,6 +230,7 @@ router.get(
 );
 
 //
+// router.get("/price-range", getPriceRange);
 
 router.get("/quick-view/:id", getQuickViewProduct);
 
