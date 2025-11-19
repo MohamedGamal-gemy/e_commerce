@@ -96,12 +96,20 @@ router.post(
     //   sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
     //   maxAge: 24 * 60 * 60 * 1000,
     // });
+    // res.cookie("token", token, {
+    //   httpOnly: true,
+    //   secure: process.env.NODE_ENV === "production", // على localhost خليها false
+    //   sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+    //   path: "/",
+    //   maxAge: 24 * 60 * 60 * 1000, // يوم واحد
+    // });
+
     res.cookie("token", token, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === "production", // على localhost خليها false
-      sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+      secure: true, // حتى لو على localhost - مش مشكلة
+      sameSite: "none", // إلزامي لعشان تبعت الكوكي عبر دومينات مختلفة
       path: "/",
-      maxAge: 24 * 60 * 60 * 1000, // يوم واحد
+      maxAge: 24 * 60 * 60 * 1000,
     });
 
     res.status(201).json({
@@ -204,12 +212,21 @@ router.post(
     //   maxAge: 24 * 60 * 60 * 1000, // 1 day
     // });
 
+    // res.cookie("token", token, {
+    //   httpOnly: true,
+    //   secure: process.env.NODE_ENV === "production", // على localhost خليها false
+    //   sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+    //   path: "/",
+    //   maxAge: 24 * 60 * 60 * 1000, // يوم واحد
+    // });
+
     res.cookie("token", token, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === "production", // على localhost خليها false
+      secure: process.env.NODE_ENV === "production",
       sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+
       path: "/",
-      maxAge: 24 * 60 * 60 * 1000, // يوم واحد
+      maxAge: 24 * 60 * 60 * 1000,
     });
 
     // ✅ Update lastLogin (optional, for analytics)
