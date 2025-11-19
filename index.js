@@ -31,17 +31,34 @@ app.use(cookieParser());
 //     // allowedHeaders: ["Content-Type", "Authorization"],
 //   })
 // );
+app.use((req, res, next) => {
+  res.header("Access-Control-Allow-Credentials", "true");
+  res.header("Access-Control-Allow-Origin", req.headers.origin);
+  res.header("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,PATCH,OPTIONS");
+  res.header("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  next();
+});
 
 app.use(
   cors({
-    origin: [
-      "http://localhost:5000",
-      "http://localhost:3000",
-      // "https://YOUR_FRONTEND_REPLIT_URL.repl.co",
-    ],
+    origin: (origin, callback) => callback(null, true),
     credentials: true,
   })
 );
+
+app.options("*", cors());
+
+
+// app.use(
+//   cors({
+//     origin: [
+//       "http://localhost:5000",
+//       "http://localhost:3000",
+//       // "https://YOUR_FRONTEND_REPLIT_URL.repl.co",
+//     ],
+//     credentials: true,
+//   })
+// );
 
 // ✅ بعد كده الميدل وير الباقيين
 app.use(morgan("dev"));
