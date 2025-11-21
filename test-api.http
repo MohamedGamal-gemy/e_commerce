@@ -1,7 +1,9 @@
 
 ### Get All Product Types
 # GET  http://localhost:9000/api/products/quick-view/690f0edf809c79e39224f09c
-GET  http://localhost:9000/api/products?minPrice=670&maxPrice=8400
+GET    http://localhost:9000/api/products
+###
+DELETE    http://localhost:9000/api/products/691dff088fda7039d6b6ee2e
 # /limited-edition-long-wool-trench-coat-020820
 # /690f0edf809c79e39224f09c
 # /neutral-signature-soft-touch-wool-rich-epsom-coat-24f09c
