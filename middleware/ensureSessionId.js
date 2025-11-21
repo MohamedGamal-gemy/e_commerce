@@ -95,7 +95,7 @@ module.exports = function ensureSessionId(req, res, next) {
       sameSite: isProduction ? "none" : "lax",  // 'none' in production, 'lax' in development
       maxAge: 1000 * 60 * 60 * 24 * 30,  // 30 days
       path: '/',  // Ensure cookie is available across all paths
-      domain: isProduction ? '.yourdomain.com' : undefined  // Set your production domain
+      // domain: isProduction ? '.yourdomain.com' : undefined  // Set your production domain
     });
   }
 
