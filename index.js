@@ -48,23 +48,26 @@ app.use(cookieParser());
 
 // app.options("*", cors());
 
-const allowedOrigin = "http://localhost:5000"; // البورت الافتراضي لـ Next.js dev server
+// const allowedOrigin = "http://localhost:5000"; // البورت الافتراضي لـ Next.js dev server
 
-app.use(
-  cors({
-    origin: allowedOrigin,
-    credentials: true,
-  })
-);
+// app.use(
+//   cors({
+//     origin: allowedOrigin,
+//     credentials: true,
+//   })
+// );
 
-app.options(
-  "*",
-  cors({
-    origin: allowedOrigin,
-    credentials: true,
-  })
-);
-
+// app.options(
+//   "*",
+//   cors({
+//     origin: allowedOrigin,
+//     credentials: true,
+//   })
+// );
+app.use(cors({
+  origin: 'http://localhost:5000',
+  credentials: true
+}));
 // app.use(
 //   cors({
 //     origin: [
