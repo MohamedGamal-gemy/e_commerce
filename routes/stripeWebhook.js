@@ -1,9 +1,9 @@
 const express = require("express");
 const Stripe = require("stripe");
 const bodyParser = require("body-parser");
-const Order = require("../models/Order");
+const Order = require("../models/order");
 const ProductVariant = require("../models/productVariant");
-const Product = require("../models/Product");
+const Product = require("../models/product");
 
 const router = express.Router();
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);

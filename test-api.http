@@ -1,8 +1,20 @@
 
 ### Get All Product Types
-GET  http://localhost:9000/api/products/neutral-signature-soft-touch-wool-rich-epsom-coat-24f09c
+# GET  http://localhost:9000/api/products/quick-view/690f0edf809c79e39224f09c
+GET  http://localhost:9000/api/products?minPrice=670&maxPrice=8400
+# /limited-edition-long-wool-trench-coat-020820
+# /690f0edf809c79e39224f09c
+# /neutral-signature-soft-touch-wool-rich-epsom-coat-24f09c
 ### Delete
 GET  http://localhost:9000/api/product-types
+
+
+
+
+# 
+
+
+### Create Review
 
 ### Get Single Product Type
 # GET http://localhost:9000/api/product-types/{{PRODUCT_TYPE_ID}}

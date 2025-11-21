@@ -6,6 +6,7 @@ const asyncHandler = require("express-async-handler");
 const Stripe = require("stripe");
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 const Cart = require("../models/cart");
+const User = require("../models/user");
 const GuestCart = require("../models/guestCart");
 const Order = require("../models/order");
 const ProductVariant = require("../models/productVariant");
@@ -35,12 +36,10 @@ router.post(
 
       // 🛡️ إجبار تسجيل الدخول للـ checkout (مفروض عبر protect)
       if (!userId) {
-        return res
-          .status(401)
-          .json({
-            code: "NEED_AUTH",
-            message: "Authentication required for checkout",
-          });
+        return res.status(401).json({
+          code: "NEED_AUTH",
+          message: "Authentication required for checkout",
+        });
       }
 
       // 🔀 دمج سلة الضيف (إن وُجدت) إلى سلة المستخدم
@@ -219,134 +218,6 @@ router.get("/get-orders", async (req, res) => {
     res.status(500).json({ error: "Failed to fetch orders" });
   }
 });
-// admin
-// 🛠️ Admin: get all orders
-// router.get("/admin/orders", async (req, res) => {
-//   try {
-
-//     const orders = await Order.find()
-//       .populate({
-//         path: "userId",
-//         select: "name email",
-//       })
-//       .populate({
-//         path: "items.productId",
-//         select: "title price",
-//       })
-//       .populate({
-//         path: "items.variantId",
-//         select: "color images",
-//         transform: (doc) => {
-//           if (!doc) return doc;
-//           return {
-//             ...doc.toObject(),
-//             images: doc.images?.length ? [doc.images[0]] : [],
-//           };
-//         },
-//       })
-//       .sort({ createdAt: -1 });
-
-//     res.json({ orders });
-//   } catch (error) {
-//     console.error("❌ Error fetching admin orders:", error);
-//     res.status(500).json({ error: "Failed to fetch admin orders" });
-//   }
-// });
-
-// desd
-// router.get("/admin/orders", async (req, res) => {
-//   try {
-//     const {
-//       search,
-//       status,
-//       from,
-//       to,
-//       minTotal,
-//       maxTotal,
-//       page = 1,
-//       limit = 10,
-//     } = req.query;
-
-//     const filter = {};
-
-//     // 🔍 بحث بالاسم أو الإيميل أو ID
-//     if (search) {
-//       const regex = new RegExp(search, "i");
-//       filter.$or = [
-//         { "billingDetails.fullName": regex },
-//         { "billingDetails.email": regex },
-//         { _id: search.length === 24 ? search : undefined }, // لو كتب الـ ID كامل
-//       ].filter(Boolean);
-//     }
-
-//     // 📦 فلترة بالحالة
-//     if (status && status !== "all") {
-//       filter.status = status;
-//     }
-
-//     // 🗓️ فلترة بالتاريخ
-//     if (from || to) {
-//       filter.createdAt = {};
-//       if (from) filter.createdAt.$gte = new Date(from);
-//       if (to) {
-//         const toDate = new Date(to);
-//         toDate.setHours(23, 59, 59, 999);
-//         filter.createdAt.$lte = toDate;
-//       }
-//     }
-
-//     // 💰 فلترة بالسعر
-//     if (minTotal || maxTotal) {
-//       filter.total = {};
-//       if (minTotal) filter.total.$gte = Number(minTotal);
-//       if (maxTotal) filter.total.$lte = Number(maxTotal);
-//     }
-
-//     // 📄 Pagination
-//     const skip = (Number(page) - 1) * Number(limit);
-
-//     const [orders, totalOrders] = await Promise.all([
-//       Order.find(filter)
-//         .populate({
-//           path: "userId",
-//           select: "name email",
-//         })
-//         .populate({
-//           path: "items.productId",
-//           select: "title price",
-//         })
-//         .populate({
-//           path: "items.variantId",
-//           select: "color images",
-//           transform: (doc) => {
-//             if (!doc) return doc;
-//             return {
-//               ...doc.toObject(),
-//               images: doc.images?.length ? [doc.images[0]] : [],
-//             };
-//           },
-//         })
-//         .sort({ createdAt: -1 })
-//         .skip(skip)
-//         .limit(Number(limit)),
-
-//       Order.countDocuments(filter),
-//     ]);
-
-//     const totalPages = Math.ceil(totalOrders / limit);
-
-//     res.json({
-//       orders,
-//       totalOrders,
-//       totalPages,
-//       currentPage: Number(page),
-//     });
-//   } catch (error) {
-//     console.error("❌ Error fetching admin orders:", error);
-//     res.status(500).json({ error: "Failed to fetch admin orders" });
-//   }
-// });
-
 // GET /api/checkout/admin/orders
 router.get("/admin/orders", async (req, res) => {
   try {
@@ -419,10 +290,17 @@ router.get("/admin/orders", async (req, res) => {
         .populate({
           path: "items.variant",
           select: "color images",
+          // transform: (doc) => {
+          //   if (!doc) return doc;
+          //   const o = doc.toObject();
+          //   return { ...o, images: o.images?.length ? [o.images[0]] : [] };
+          // },
           transform: (doc) => {
             if (!doc) return doc;
-            const o = doc.toObject();
-            return { ...o, images: o.images?.length ? [o.images[0]] : [] };
+            return {
+              ...doc,
+              images: doc.images?.length ? [doc.images[0]] : [],
+            };
           },
         })
         .sort({ createdAt: -1 })
@@ -476,201 +354,6 @@ router.patch("/orders/:id/status", async (req, res) => {
     res.status(500).json({ error: "Failed to update order status" });
   }
 });
-
-//
-/**
- * @route   GET /api/checkout/admin/orders/analytics
- * @desc    Get detailed analytics for orders (dashboard)
- * @query   ?range=month&status=paid
- */
-// router.get("/orders/analytics", async (req, res) => {
-//   try {
-//     const { range = "month", status } = req.query;
-//     const now = new Date();
-//     let startDate, dateFormat;
-
-//     // 🗓️ تحديد النطاق الزمني
-//     switch (range) {
-//       case "day":
-//         startDate = new Date(now);
-//         startDate.setHours(0, 0, 0, 0);
-//         dateFormat = "%Y-%m-%d %H:00"; // ساعات اليوم
-//         break;
-//       case "week":
-//         startDate = new Date(now);
-//         startDate.setDate(now.getDate() - 7);
-//         dateFormat = "%Y-%m-%d"; // أيام الأسبوع
-//         break;
-//       case "month":
-//         startDate = new Date(now.getFullYear(), now.getMonth(), 1);
-//         dateFormat = "%Y-%m-%d"; // أيام الشهر
-//         break;
-//       case "year":
-//         startDate = new Date(now.getFullYear(), 0, 1);
-//         dateFormat = "%Y-%m"; // شهور السنة
-//         break;
-//       default:
-//         startDate = new Date(0);
-//         dateFormat = "%Y-%m-%d";
-//     }
-
-//     // 🧩 الفلاتر الديناميكية
-//     const matchStage = { createdAt: { $gte: startDate } };
-//     if (status) matchStage.status = status;
-
-//     // 📊 إجماليات عامة
-//     const generalStats = await Order.aggregate([
-//       { $match: matchStage },
-//       {
-//         $group: {
-//           _id: "$status",
-//           count: { $sum: 1 },
-//           totalRevenue: { $sum: "$total" },
-//         },
-//       },
-//     ]);
-
-//     const totals = {
-//       totalOrders: 0,
-//       pending: 0,
-//       paid: 0,
-//       cancelled: 0,
-//       totalRevenue: 0,
-//     };
-
-//     generalStats.forEach((s) => {
-//       totals.totalOrders += s.count;
-//       totals.totalRevenue += s.totalRevenue || 0;
-//       if (s._id === "pending") totals.pending = s.count;
-//       if (s._id === "paid") totals.paid = s.count;
-//       if (s._id === "cancelled") totals.cancelled = s.count;
-//     });
-
-//     // 📈 الإيرادات حسب الفترة الزمنية
-//     const ordersTrend = await Order.aggregate([
-//       { $match: matchStage },
-//       {
-//         $group: {
-//           _id: {
-//             date: { $dateToString: { format: dateFormat, date: "$createdAt" } },
-//             status: "$status",
-//           },
-//           count: { $sum: 1 },
-//         },
-//       },
-//       {
-//         $group: {
-//           _id: "$_id.date",
-//           statuses: {
-//             $push: {
-//               status: "$_id.status",
-//               count: "$count",
-//             },
-//           },
-//         },
-//       },
-//       {
-//         $project: {
-//           _id: 0,
-//           date: "$_id",
-//           statuses: 1,
-//         },
-//       },
-//       { $sort: { date: 1 } },
-//     ]);
-
-//     // 🏆 أعلى المنتجات مبيعًا
-//     const topProducts = await Order.aggregate([
-//       { $unwind: "$items" },
-//       {
-//         $group: {
-//           _id: "$items.productId",
-//           totalSold: { $sum: "$items.quantity" },
-//           totalRevenue: { $sum: "$items.price" },
-//         },
-//       },
-//       {
-//         $lookup: {
-//           from: "products",
-//           localField: "_id",
-//           foreignField: "_id",
-//           as: "product",
-//         },
-//       },
-//       {
-//         $unwind: {
-//           path: "$product",
-//           preserveNullAndEmptyArrays: true,
-//         },
-//       },
-//       {
-//         $project: {
-//           _id: 1,
-//           totalSold: 1,
-//           totalRevenue: 1,
-//           name: "$product.name",
-//         },
-//       },
-//       { $sort: { totalSold: -1 } },
-//       { $limit: 5 },
-//     ]);
-
-//     // 👥 المستخدمين الجدد خلال نفس الفترة
-//     const newUsers = await User.countDocuments({
-//       createdAt: { $gte: startDate },
-//     });
-
-//     // 📊 مقارنة الفترة السابقة (growth rate)
-//     const previousPeriodStart = new Date(startDate);
-//     const diffDays = Math.ceil((now - startDate) / (1000 * 60 * 60 * 24));
-//     previousPeriodStart.setDate(previousPeriodStart.getDate() - diffDays);
-
-//     const avgOrderValue =
-//       totals.totalOrders > 0
-//         ? (totals.totalRevenue / totals.totalOrders).toFixed(2)
-//         : 0;
-
-//     const previousRevenue = await Order.aggregate([
-//       {
-//         $match: {
-//           createdAt: { $gte: previousPeriodStart, $lt: startDate },
-//           status: "paid",
-//         },
-//       },
-//       {
-//         $group: { _id: null, total: { $sum: "$total" } },
-//       },
-//     ]);
-
-//     const growthRate =
-//       previousRevenue.length > 0
-//         ? (
-//             ((totals.totalRevenue - previousRevenue[0].total) /
-//               previousRevenue[0].total) *
-//             100
-//           ).toFixed(2)
-//         : 0;
-//     const previousOrders = await Order.countDocuments({
-//       createdAt: { $gte: previousPeriodStart, $lt: startDate },
-//       ...(status ? { status } : {}),
-//     });
-
-//     // ✅ النتيجة النهائية
-//     res.json({
-//       summary: {
-//         ...totals,
-//         avgOrderValue: Number(avgOrderValue),
-//       },
-//       trend: revenueTrend,
-//       growthRate: Number(growthRate),
-//       topProducts,
-//       newUsers,
-//     });
-//   } catch (error) {
-//     console.error("❌ Analytics Error:", error);
-//     res.status(500).json({ error: "Failed to get analytics" });
-//   }
-// });
 
 router.get("/orders/analytics", async (req, res) => {
   try {
@@ -881,82 +564,5 @@ router.get("/orders/analytics", async (req, res) => {
   }
 });
 
-// router.get("/orders/analytics", async (req, res) => {
-//   try {
-//     const { range } = req.query; // "day" | "week" | "month" | "year"
-
-//     const now = new Date();
-//     let startDate;
-
-//     switch (range) {
-//       case "day":
-//         startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-//         break;
-//       case "week":
-//         startDate = new Date(now);
-//         startDate.setDate(now.getDate() - 7);
-//         break;
-//       case "month":
-//         startDate = new Date(now.getFullYear(), now.getMonth(), 1);
-//         break;
-//       case "year":
-//         startDate = new Date(now.getFullYear(), 0, 1);
-//         break;
-//       default:
-//         startDate = new Date(0); // كل الوقت
-//     }
-
-//     // 📊 إجماليات عامة
-//     const generalStats = await Order.aggregate([
-//       {
-//         $group: {
-//           _id: "$status",
-//           count: { $sum: 1 },
-//           totalRevenue: { $sum: "$total" },
-//         },
-//       },
-//     ]);
-
-//     const totals = {
-//       totalOrders: 0,
-//       pending: 0,
-//       paid: 0,
-//       cancelled: 0,
-//       totalRevenue: 0,
-//     };
-
-//     generalStats.forEach((s) => {
-//       totals.totalOrders += s.count;
-//       totals.totalRevenue += s.totalRevenue || 0;
-//       if (s._id === "pending") totals.pending = s.count;
-//       if (s._id === "paid") totals.paid = s.count;
-//       if (s._id === "cancelled") totals.cancelled = s.count;
-//     });
-
-//     // 📈 الإيرادات حسب التاريخ للفترة المختارة
-//     const revenueTrend = await Order.aggregate([
-//       {
-//         $match: {
-//           createdAt: { $gte: startDate },
-//           status: "paid",
-//         },
-//       },
-//       {
-//         $group: {
-//           _id: {
-//             $dateToString: { format: "%Y-%m-%d", date: "$createdAt" },
-//           },
-//           totalRevenue: { $sum: "$total" },
-//         },
-//       },
-//       { $sort: { _id: 1 } },
-//     ]);
-
-//     res.json({ ...totals, revenueTrend });
-//   } catch (error) {
-//     console.error("❌ Analytics Error:", error);
-//     res.status(500).json({ error: "Failed to get analytics" });
-//   }
-// });
 
 module.exports = router;
