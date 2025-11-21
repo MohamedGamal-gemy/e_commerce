@@ -55,7 +55,7 @@ module.exports = function ensureSessionId(req, res, next) {
     //   path: "/", // تبع كل المسارات
     // });
     res.cookie("sessionId", sessionId, {
-      httpOnly: true,
+      httpOnly: false,
       secure: false, // أثناء التطوير على localhost
       sameSite: "lax", // أو "strict" أثناء التطوير
       maxAge: 1000 * 60 * 60 * 24 * 30,
