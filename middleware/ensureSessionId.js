@@ -14,14 +14,21 @@ module.exports = function ensureSessionId(req, res, next) {
   if (!sessionId) {
     sessionId = uuidv4();
     // set as httpOnly cookie
+    // res.cookie("sessionId", sessionId, {
+    //   httpOnly: true,
+    //   secure: process.env.NODE_ENV === "production",
+    //   sameSite: "lax",
+    //   maxAge: 1000 * 60 * 60 * 24 * 30, // 30 days
+    // });
+
     res.cookie("sessionId", sessionId, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "lax",
-      maxAge: 1000 * 60 * 60 * 24 * 30, // 30 days
+      secure: true,
+      sameSite:  "none" ,
+      maxAge: 1000 * 60 * 60 * 24 * 30,
     });
   }
 
   req.sessionId = sessionId;
   next();
-}
+};
