@@ -17,7 +17,7 @@ const app = express();
 // ✅ Connect to DB
 connectToDB();
 
-app.use("/webhook", require("./routes/stripeWebhook"));
+app.use("/api/webhook", require("./routes/stripeWebhook"));
 
 // ✅ Middlewares
 app.use(express.json());
