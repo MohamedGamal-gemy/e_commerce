@@ -65,7 +65,8 @@ app.use(cookieParser());
 //   })
 // );
 app.use(cors({
-  origin: 'http://localhost:5000',
+  // origin: 'http://localhost:5000',
+  origin: "*",
   credentials: true
 }));
 // app.use(
