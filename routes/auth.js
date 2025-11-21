@@ -21,52 +21,6 @@ const router = express.Router();
  * @method POST
  * @access public
  */
-// router.post(
-//   "/register",
-//   expressAsyncHandler(async (req, res) => {
-//     const { email, username, password } = req.body;
-
-//     // Validate input
-//     const { error } = validateRegisterUser(req.body);
-//     if (error) {
-//       return res.status(400).json({ message: error.details[0].message });
-//     }
-
-//     // Check if user already exists
-//     let user = await User.findOne({ email });
-//     if (user) {
-//       return res
-//         .status(400)
-//         .json({ message: "This email is already registered." });
-//     }
-
-//     // Hash password
-//     // const salt = await bcrypt.genSalt(10);
-//     // const passwordHash = await bcrypt.hash(password, salt);
-
-//     // Create and save user
-// user = new User({ email, username, password });
-//     const savedUser = await user.save();
-//     const token = user.generateToken();
-
-//     const userObj = savedUser.toObject();
-//     delete userObj.password;
-
-//     // Set token in cookie
-//     res.cookie("token", token, {
-//       httpOnly: true, // Prevent client-side access to the cookie
-//       secure: process.env.NODE_ENV === "production", // Use secure in production
-//       maxAge: 24 * 60 * 60 * 1000, // Cookie expiry: 1 day
-//       sameSite: "lax", // Prevent CSRF
-//     });
-
-//     res.status(201).json({
-//       ...userObj,
-//       message: "Registration successful.",
-//     });
-//   })
-// );
-
 router.post(
   "/register",
   expressAsyncHandler(async (req, res) => {
@@ -91,25 +45,24 @@ router.post(
 
     // res.cookie("token", token, {
     //   httpOnly: true,
-    //   secure: process.env.NODE_ENV === "production",
+    //   secure: true, // حتى لو على localhost - مش مشكلة
+    //   sameSite: "none", // إلزامي لعشان تبعت الكوكي عبر دومينات مختلفة
     //   path: "/",
-    //   sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
     //   maxAge: 24 * 60 * 60 * 1000,
     // });
-    // res.cookie("token", token, {
-    //   httpOnly: true,
-    //   secure: process.env.NODE_ENV === "production", // على localhost خليها false
-    //   sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
-    //   path: "/",
-    //   maxAge: 24 * 60 * 60 * 1000, // يوم واحد
-    // });
+    const isProduction = process.env.NODE_ENV === "production";
+    const isHttps =
+      req.secure ||
+      (req.headers["x-forwarded-proto"] &&
+        req.headers["x-forwarded-proto"] === "https");
 
     res.cookie("token", token, {
       httpOnly: true,
-      secure: true, // حتى لو على localhost - مش مشكلة
-      sameSite: "none", // إلزامي لعشان تبعت الكوكي عبر دومينات مختلفة
-      path: "/",
-      maxAge: 24 * 60 * 60 * 1000,
+      secure: isProduction || isHttps, // true in production or when using HTTPS
+      sameSite: isProduction ? "none" : "lax", // 'none' in production, 'lax' in development
+      maxAge: 1000 * 60 * 60 * 24 * 30, // 30 days
+      path: "/", // Ensure cookie is available across all paths
+      // domain: isProduction ? '.yourdomain.com' : undefined  // Set your production domain
     });
 
     res.status(201).json({
@@ -134,46 +87,6 @@ router.post("/logout", (req, res) => {
 //  * @method POST
 //  * @access public
 //  */
-// router.post(
-//   "/login",
-//   expressAsyncHandler(async (req, res) => {
-//     const { error } = validateLoginUser(req.body);
-
-//     if (error) {
-//       return res.status(400).json({ message: error.details[0].message });
-//     }
-
-//     let user = await User.findOne({ email: req.body.email });
-//     if (!user) {
-//       return res.status(400).json({ message: "Invalid email" });
-//     }
-
-//     const isPasswordMatch = await bcrypt.compare(
-//       req.body.password,
-//       user.password
-//     );
-//     if (!isPasswordMatch) {
-//       return res.status(400).json({ message: "Invalid password" });
-//     }
-
-//     const token = user.generateToken();
-//     const { password, ...other } = user._doc;
-
-//     // Set token in cookie
-//     res.cookie("token", token, {
-//       httpOnly: false, // Prevent client-side access to the cookie
-//       // httpOnly: true, // Prevent client-side access to the cookie
-//       // secure: process.env.NODE_ENV === "production", // Use secure in production
-//       secure: false, // Use secure in production
-//       maxAge: 24 * 60 * 60 * 1000, // Cookie expiry: 1 day
-//       // sameSite: "strict", // Prevent CSRFh
-//       sameSite: "lax", // Prevent CSRF
-//     });
-
-//     res.status(200).json({ ...other, message: "Login successful" });
-//   })
-// );
-
 router.post(
   "/login",
   expressAsyncHandler(async (req, res) => {
@@ -204,21 +117,28 @@ router.post(
     const userObj = user.toObject();
     delete userObj.password;
 
-    // ✅ Set token cookie
     // res.cookie("token", token, {
-    //   httpOnly: true, // prevent client JS access
+    //   httpOnly: true,
     //   secure: process.env.NODE_ENV === "production",
-    //   sameSite: "lax",
-    //   maxAge: 24 * 60 * 60 * 1000, // 1 day
+    //   sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+
+    //   path: "/",
+    //   maxAge: 24 * 60 * 60 * 1000,
     // });
+
+    const isProduction = process.env.NODE_ENV === "production";
+    const isHttps =
+      req.secure ||
+      (req.headers["x-forwarded-proto"] &&
+        req.headers["x-forwarded-proto"] === "https");
 
     res.cookie("token", token, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
-
-      path: "/",
-      maxAge: 24 * 60 * 60 * 1000,
+      secure: isProduction || isHttps, // true in production or when using HTTPS
+      sameSite: isProduction ? "none" : "lax", // 'none' in production, 'lax' in development
+      maxAge: 1000 * 60 * 60 * 24 * 30, // 30 days
+      path: "/", // Ensure cookie is available across all paths
+      // domain: isProduction ? '.yourdomain.com' : undefined  // Set your production domain
     });
 
     // ✅ Update lastLogin (optional, for analytics)
