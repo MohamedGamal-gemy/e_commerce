@@ -31,23 +31,39 @@ app.use(cookieParser());
 //     // allowedHeaders: ["Content-Type", "Authorization"],
 //   })
 // );
-app.use((req, res, next) => {
-  res.header("Access-Control-Allow-Credentials", "true");
-  res.header("Access-Control-Allow-Origin", req.headers.origin);
-  res.header("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,PATCH,OPTIONS");
-  res.header("Access-Control-Allow-Headers", "Content-Type, Authorization");
-  next();
-});
+// app.use((req, res, next) => {
+//   res.header("Access-Control-Allow-Credentials", "true");
+//   res.header("Access-Control-Allow-Origin", req.headers.origin);
+//   res.header("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,PATCH,OPTIONS");
+//   res.header("Access-Control-Allow-Headers", "Content-Type, Authorization");
+//   next();
+// });
+
+// app.use(
+//   cors({
+//     origin: (origin, callback) => callback(null, true),
+//     credentials: true,
+//   })
+// );
+
+// app.options("*", cors());
+
+const allowedOrigin = "http://localhost:5000"; // البورت الافتراضي لـ Next.js dev server
 
 app.use(
   cors({
-    origin: (origin, callback) => callback(null, true),
+    origin: allowedOrigin,
     credentials: true,
   })
 );
 
-app.options("*", cors());
-
+app.options(
+  "*",
+  cors({
+    origin: allowedOrigin,
+    credentials: true,
+  })
+);
 
 // app.use(
 //   cors({
