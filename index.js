@@ -118,7 +118,7 @@ const loginLimiter = rateLimit({
 // ✅ Routes
 // Default route for root
 app.get("/", (req, res) => {
-  res.status(200).json({ message: "API is running 🚀" });
+  res.status(200).json({ message: "API is running server 🚀" });
 });
 
 // app.use("/api/stripe", require("./routes/stripe"));
