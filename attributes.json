@@ -1,0 +1,98 @@
+{
+  "attributes": [
+    {
+      "key": "fabric",
+      "label": "Fabric",
+      "options": [
+        "Cotton",
+        "Polyester",
+        "Linen",
+        "Wool",
+        "Denim",
+        "Nylon",
+        "Rayon",
+        "Viscose",
+        "Acrylic",
+        "Leather",
+        "Satin",
+        "Silk",
+        "Fleece",
+        "Jersey",
+        "Knitted"
+      ]
+    },
+    {
+      "key": "fit",
+      "label": "Fit Type",
+      "options": [
+        "Regular",
+        "Slim",
+        "Oversized",
+        "Relaxed",
+        "Loose",
+        "Skinny",
+        "Baggy",
+        "Tailored"
+      ]
+    },
+    {
+      "key": "season",
+      "label": "Season",
+      "options": ["Summer", "Winter", "Spring", "Autumn", "All Seasons"]
+    },
+    {
+      "key": "pattern",
+      "label": "Pattern Type",
+      "options": [
+        "Solid",
+        "Striped",
+        "Checked",
+        "Printed",
+        "Floral",
+        "Graphic",
+        "Camouflage",
+        "Geometric"
+      ]
+    },
+    {
+      "key": "sleeve",
+      "label": "Sleeve Length",
+      "options": [
+        "Short Sleeve",
+        "Long Sleeve",
+        "Sleeveless",
+        "Half Sleeve",
+        "Three Quarter Sleeve"
+      ]
+    },
+    {
+      "key": "neck",
+      "label": "Neck Style",
+      "options": [
+        "Round Neck",
+        "V-Neck",
+        "Polo",
+        "Crew Neck",
+        "Turtleneck",
+        "Off Shoulder"
+      ]
+    },
+    {
+      "key": "length",
+      "label": "Length",
+      "options": ["Short", "Regular", "Long", "Cropped", "Midi", "Maxi"]
+    },
+    {
+      "key": "closure",
+      "label": "Closure Type",
+      "options": [
+        "Zipper",
+        "Button",
+        "Pullover",
+        "Elastic",
+        "Drawstring",
+        "Hook"
+      ]
+    }
+  ]
+}

@@ -15,7 +15,7 @@ const connection = new Redis({
   password: PASSWORD,
 
   // IMPORTANT
-  tls: null, // ❌ ممنوع وجود TLS
+  // tls: null, // ❌ ممنوع وجود TLS
   maxRetriesPerRequest: null,
   enableReadyCheck: false,
 });

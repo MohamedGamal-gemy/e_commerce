@@ -1,54 +1,13 @@
-// const mongoose = require("mongoose");
-
-// const ReviewSchema = new mongoose.Schema(
-//   {
-//     product: {
-//       type: mongoose.Schema.Types.ObjectId,
-//       ref: "Product",
-//       required: true,
-//       index: true,
-//     },
-//     user: {
-//       type: mongoose.Schema.Types.ObjectId,
-//       ref: "User",
-//       required: true,
-//       index: true,
-//     },
-//     rating: {
-//       type: Number,
-//       required: true,
-//       min: 1,
-//       max: 5,
-//     },
-//     title: {
-//       type: String,
-//       trim: true,
-//       maxlength: 100,
-//     },
-//     comment: {
-//       type: String,
-//       trim: true,
-//       maxlength: 1000,
-//     },
-//     images: [
-//       {
-//         url: String,
-//         publicId: String,
-//         alt: String,
-//       },
-//     ],
-//     isVerifiedPurchase: {
-//       type: Boolean,
-//       default: false,
-//     },
-//   },
-//   { timestamps: true }
-// );
-
-// module.exports = ReviewSchema;
-
-
 const mongoose = require("mongoose");
+
+const imageSchema = new mongoose.Schema(
+  {
+    url: String,
+    publicId: String,
+    alt: String,
+  },
+  { _id: false }
+);
 
 const ReviewSchema = new mongoose.Schema(
   {
@@ -64,43 +23,23 @@ const ReviewSchema = new mongoose.Schema(
       required: true,
       index: true,
     },
-    rating: {
-      type: Number,
-      required: true,
-      min: 1,
-      max: 5,
-    },
-    title: {
-      type: String,
-      trim: true,
-      maxlength: 100,
-    },
-    comment: {
-      type: String,
-      trim: true,
-      maxlength: 1000,
-    },
-    images: [
-      {
-        url: String,
-        publicId: String,
-        alt: String,
-      },
-    ],
-    isVerifiedPurchase: {
-      type: Boolean,
-      default: false,
-    },
+    rating: { type: Number, required: true, min: 1, max: 5 },
+    title: { type: String, trim: true, maxlength: 100 },
+    comment: { type: String, trim: true, maxlength: 1000 },
+    images: [imageSchema],
+    isVerifiedPurchase: { type: Boolean, default: false },
   },
   { timestamps: true }
 );
 
-/** ------------------------------
- * 🔹 STATIC: حساب متوسط التقييمات
---------------------------------*/
+// ✅ Index to prevent duplicate reviews by same user
+ReviewSchema.index({ product: 1, user: 1 }, { unique: true });
+ReviewSchema.index({ rating: -1 });
+
+// ✅ Static: حساب متوسط التقييمات وعدد الريفيوز
 ReviewSchema.statics.getProductStats = async function (productId) {
   const stats = await this.aggregate([
-    { $match: { product: new mongoose.Types.ObjectId(productId) } },
+    { $match: { product: mongoose.Types.ObjectId(productId) } },
     {
       $group: {
         _id: "$product",
@@ -109,28 +48,25 @@ ReviewSchema.statics.getProductStats = async function (productId) {
       },
     },
   ]);
-
-  return stats.length > 0
-    ? stats[0]
-    : { avgRating: 0, numReviews: 0 };
+  return stats[0] || { avgRating: 0, numReviews: 0 };
 };
 
-/** ------------------------------
- * 🔹 POST SAVE/DELETE: تحديث المنتج تلقائياً
---------------------------------*/
-async function updateProductRating(doc) {
-  const Review = doc.constructor;
-  const Product = require("../product");
+ReviewSchema.methods.updateProductRating = async function () {
+  const Product = require("./product"); // استدعاء ديناميكي لتجنب circular dependency
+  const stats = await this.constructor.getProductStats(this.product);
 
-  const stats = await Review.getProductStats(doc.product);
-
-  await Product.findByIdAndUpdate(doc.product, {
-    averageRating: stats.avgRating.toFixed(1),
+  await Product.findByIdAndUpdate(this.product, {
+    rating: stats.avgRating.toFixed(1), // ✅ نفس اسم الحقل في Product
     numReviews: stats.numReviews,
   });
-}
+};
 
-ReviewSchema.post("save", updateProductRating);
-ReviewSchema.post("findOneAndDelete", updateProductRating);
+// ✅ Hooks
+ReviewSchema.post("save", function () {
+  this.updateProductRating().catch(console.error);
+});
+ReviewSchema.post("findOneAndDelete", function (doc) {
+  doc?.updateProductRating().catch(console.error);
+});
 
-module.exports = ReviewSchema;
+module.exports = mongoose.model("Review", ReviewSchema);

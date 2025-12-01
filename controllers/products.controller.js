@@ -20,6 +20,16 @@ const { groupFilesByField } = require("../utils/file.utils");
 const { productQueue } = require("../queues/productQueue");
 const { deleteImage } = require("../utils/file.utils");
 
+// #######################################
+const {
+  buildPipeline,
+  getProductsAggregationHandler,
+} = require("../pipelines");
+
+const getProducts = getProductsAggregationHandler(require("../models/product"));
+exports.getProducts = getProducts;
+
+// #######################################
 exports.createProduct = async (req, res) => {
   try {
     let variants = req.body.variants;
@@ -83,32 +93,32 @@ exports.createProduct = async (req, res) => {
  * @access Public
  */
 
-exports.getProducts = async (req, res) => {
-  try {
-    const { productTypeName, search } = req.query;
+// exports.getProducts = async (req, res) => {
+//   try {
+//     const { productTypeName, search } = req.query;
 
-    let filter = {};
+//     let filter = {};
 
-    // فلتر أكتر من نوع productTypeName (Comma Separated)
-    if (productTypeName) {
-      const types = productTypeName.split(",").map((t) => t.trim());
-      filter.productTypeName = { $in: types };
-    }
+//     // فلتر أكتر من نوع productTypeName (Comma Separated)
+//     if (productTypeName) {
+//       const types = productTypeName.split(",").map((t) => t.trim());
+//       filter.productTypeName = { $in: types };
+//     }
 
-    // فلتر الـ Search
-    if (search) {
-      const searchRegex = new RegExp(search, "i"); // case-insensitive
-      filter.searchableText = searchRegex;
-    }
+//     // فلتر الـ Search
+//     if (search) {
+//       const searchRegex = new RegExp(search, "i"); // case-insensitive
+//       filter.searchableText = searchRegex;
+//     }
 
-    const products = await Product.find(filter);
+//     const products = await Product.find(filter);
 
-    res.json(products);
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: "Server Error" });
-  }
-};
+//     res.json(products);
+//   } catch (error) {
+//     console.error(error);
+//     res.status(500).json({ message: "Server Error" });
+//   }
+// };
 
 // exports.getProducts = asyncHandler(async (req, res) => {
 //   const {
@@ -196,31 +206,63 @@ exports.getProducts = async (req, res) => {
  * @route GET /api/products/:id
  * @access Public
  */
-exports.getProduct = asyncHandler(async (req, res, next) => {
+// exports.getProduct = asyncHandler(async (req, res, next) => {
+//   const { slug } = req.params;
+
+//   if (!slug) {
+//     return next(new ApiError("Invalid product ID", 400));
+//   }
+//   // if (!mongoose.isValidObjectId(id)) {
+//   //   return next(new ApiError("Invalid product ID", 400));
+//   // }
+
+//   const product = await Product.find({ slug })
+//     .select(
+//       "title price rating numReviews  slug description images productType variants"
+//     )
+
+//     .populate("variants")
+//     .populate("productType", "name");
+
+//   if (!product) {
+//     return next(new ApiError("Product not found", 404));
+//   }
+
+//   res
+//     .status(200)
+//     .json(new ApiResponse(200, product, "Product retrieved successfully"));
+// });
+exports.getVariantByColor = asyncHandler(async (req, res, next) => {
   const { slug } = req.params;
+  const { color } = req.query;
 
-  if (!slug) {
-    return next(new ApiError("Invalid product ID", 400));
-  }
-  // if (!mongoose.isValidObjectId(id)) {
-  //   return next(new ApiError("Invalid product ID", 400));
-  // }
+  const product = await Product.findOne({ slug });
 
-  const product = await Product.find({ slug })
-    .select(
-      "title price rating numReviews  slug description images productType variants"
-    )
+  if (!product) return next(new ApiError("Product not found", 404));
 
-    .populate("variants")
-    .populate("productType", "name");
-
-  if (!product) {
-    return next(new ApiError("Product not found", 404));
-  }
+  const variant = await ProductVariant.findOne({
+    _id: { $in: product.variants },
+    ["color.name"]: color,
+  });
 
   res
     .status(200)
-    .json(new ApiResponse(200, product, "Product retrieved successfully"));
+    .json(new ApiResponse(200, variant, "Variant retrieved successfully"));
+});
+
+exports.getProductInfo = asyncHandler(async (req, res, next) => {
+  const { slug } = req.params;
+
+  const product = await Product.findOne({ slug }).select(
+    "title slug description price originalPrice discountType discountValue mainImage colors productTypeName rating numReviews"
+  );
+  // .populate("productType", "name");
+
+  if (!product) return next(new ApiError("Product not found", 404));
+
+  res
+    .status(200)
+    .json(new ApiResponse(200, product, "Product info retrieved successfully"));
 });
 
 //

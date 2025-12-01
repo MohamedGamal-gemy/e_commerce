@@ -29,7 +29,7 @@ const ProductSchema = new mongoose.Schema(
       index: true,
       required: true,
     },
-    productTypeName: String,
+    productTypeName: { type: String, index: true },
     mainImage: String,
     colors: [{ name: String, value: String, image: String }],
 

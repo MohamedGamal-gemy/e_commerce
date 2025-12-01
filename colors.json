@@ -1,0 +1,33 @@
+{
+  "colors": [
+    { "name": "Black", "value": "#000000" },
+    { "name": "White", "value": "#FFFFFF" },
+    { "name": "Gray", "value": "#808080" },
+    { "name": "Light Gray", "value": "#D3D3D3" },
+    { "name": "Dark Gray", "value": "#4B4B4B" },
+
+    { "name": "Navy", "value": "#001F54" },
+    { "name": "Blue", "value": "#1E90FF" },
+    { "name": "Light Blue", "value": "#ADD8E6" },
+
+    { "name": "Red", "value": "#FF0000" },
+    { "name": "Maroon", "value": "#800000" },
+
+    { "name": "Green", "value": "#228B22" },
+    { "name": "Olive", "value": "#808000" },
+    { "name": "Mint", "value": "#98FF98" },
+
+    { "name": "Yellow", "value": "#FFD700" },
+    { "name": "Beige", "value": "#F5F5DC" },
+    { "name": "Brown", "value": "#8B4513" },
+    { "name": "Khaki", "value": "#C3B091" },
+
+    { "name": "Purple", "value": "#800080" },
+    { "name": "Lavender", "value": "#E6E6FA" },
+
+    { "name": "Pink", "value": "#FFC0CB" },
+    { "name": "Hot Pink", "value": "#FF69B4" },
+
+    { "name": "Orange", "value": "#FFA500" }
+  ]
+}

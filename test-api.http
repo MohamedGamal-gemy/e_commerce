@@ -1,7 +1,26 @@
 
 ### Get All Product Types
 # GET  http://localhost:9000/api/products/quick-view/690f0edf809c79e39224f09c
-GET    http://localhost:9000/api/products
+GET    http://localhost:9000/api/products/filters?productTypeName=Shirts
+###
+# GET    http://localhost:9000/api/products
+GET    http://localhost:9000/api/
+# GET    http://localhost:9000/api/products/cotton-t-shirt-7349f1
+# GET    http://localhost:9000/api/products/cotton-t-shirt-7349f1/variants/by-color?color=black
+# GET    http://localhost:9000/api/products
+### 
+GET http://localhost:9000/api/auth/check-auth
+# Cookie: token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY5MGU5MGE0OTQ2NjEyYzdhNWE1MTk0NyIsImVtYWlsIjoibW9oYW1lZDEyM0BnbWFpbC5jb20iLCJyb2xlIjoidXNlciIsImlhdCI6MTc2NDQxNjc3MywiZXhwIjoxNzY0NTAzMTczfQ.mqMda1XdiLJPV_Td9adExWHM8NcBoSsXbnX44GkKu30
+
+###
+POST http://localhost:9000/api/auth/login
+Content-Type: application/json
+
+{
+  "email": "mohamed123@gmail.com",
+  "password": "12121212"
+}
+
 ###
 DELETE    http://localhost:9000/api/products/691dff088fda7039d6b6ee2e
 # /limited-edition-long-wool-trench-coat-020820

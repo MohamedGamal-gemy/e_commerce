@@ -355,100 +355,423 @@ router.patch("/orders/:id/status", async (req, res) => {
   }
 });
 
+// router.get("/orders/analytics", async (req, res) => {
+//   try {
+//     const { range = "month", status } = req.query;
+//     const now = new Date();
+//     let startDate, dateFormat;
+
+//     // 🗓️ تحديد النطاق الزمني
+//     switch (range) {
+//       case "day":
+//         startDate = new Date(now);
+//         startDate.setHours(0, 0, 0, 0);
+//         dateFormat = "%Y-%m-%d %H:00";
+//         break;
+//       case "week":
+//         startDate = new Date(now);
+//         startDate.setDate(now.getDate() - 7);
+//         dateFormat = "%Y-%m-%d";
+//         break;
+//       case "month":
+//         startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+//         dateFormat = "%Y-%m-%d";
+//         break;
+//       case "year":
+//         startDate = new Date(now.getFullYear(), 0, 1);
+//         dateFormat = "%Y-%m";
+//         break;
+//       default:
+//         startDate = new Date(0);
+//         dateFormat = "%Y-%m-%d";
+//     }
+
+//     // 🧩 الفلاتر الديناميكية
+//     const matchStage = { createdAt: { $gte: startDate } };
+//     if (status) matchStage.status = status;
+
+//     // 📊 إجماليات عامة
+//     const generalStats = await Order.aggregate([
+//       { $match: matchStage },
+//       {
+//         $group: {
+//           _id: "$status",
+//           count: { $sum: 1 },
+//           totalRevenue: { $sum: "$total" },
+//         },
+//       },
+//     ]);
+
+//     const totals = {
+//       totalOrders: 0,
+//       pending: 0,
+//       paid: 0,
+//       cancelled: 0,
+//       totalRevenue: 0,
+//     };
+
+//     generalStats.forEach((s) => {
+//       totals.totalOrders += s.count;
+//       totals.totalRevenue += s.totalRevenue || 0;
+//       if (s._id === "pending") totals.pending = s.count;
+//       if (s._id === "paid") totals.paid = s.count;
+//       if (s._id === "cancelled") totals.cancelled = s.count;
+//     });
+
+//     // 📈 الإيرادات حسب الفترة الزمنية
+//     const revenueTrend = await Order.aggregate([
+//       { $match: { ...matchStage, status: "paid" } },
+//       {
+//         $group: {
+//           _id: { $dateToString: { format: dateFormat, date: "$createdAt" } },
+//           totalRevenue: { $sum: "$total" },
+//         },
+//       },
+//       { $sort: { _id: 1 } },
+//     ]);
+
+//     // 📊 توزيع الحالات مع الوقت (optional)
+//     const ordersTrend = await Order.aggregate([
+//       { $match: matchStage },
+//       {
+//         $group: {
+//           _id: {
+//             date: { $dateToString: { format: dateFormat, date: "$createdAt" } },
+//             status: "$status",
+//           },
+//           count: { $sum: 1 },
+//         },
+//       },
+//       {
+//         $group: {
+//           _id: "$_id.date",
+//           statuses: {
+//             $push: {
+//               status: "$_id.status",
+//               count: "$count",
+//             },
+//           },
+//         },
+//       },
+//       {
+//         $project: {
+//           _id: 0,
+//           date: "$_id",
+//           statuses: 1,
+//         },
+//       },
+//       { $sort: { date: 1 } },
+//     ]);
+
+//     // 🏆 أعلى المنتجات مبيعًا (مع الصور)
+//     const topProducts = await Order.aggregate([
+//       { $unwind: "$items" },
+//       {
+//         $group: {
+//           _id: "$items.productId",
+//           totalSold: { $sum: "$items.quantity" },
+//           totalRevenue: { $sum: "$items.price" },
+//           variantId: { $first: "$items.variantId" },
+//         },
+//       },
+//       {
+//         $lookup: {
+//           from: "products",
+//           localField: "_id",
+//           foreignField: "_id",
+//           as: "product",
+//         },
+//       },
+//       { $unwind: "$product" },
+//       {
+//         $lookup: {
+//           from: "productvariants",
+//           localField: "variantId",
+//           foreignField: "_id",
+//           as: "variant",
+//         },
+//       },
+//       { $unwind: "$variant" },
+//       {
+//         $project: {
+//           _id: 1,
+//           totalSold: 1,
+//           totalRevenue: 1,
+//           name: "$product.title",
+//           image: { $arrayElemAt: ["$variant.images", 0] }, // ✅ أول صورة
+//         },
+//       },
+//       { $sort: { totalSold: -1 } },
+//       { $limit: 5 },
+//     ]);
+
+//     // 👥 المستخدمين الجدد
+//     const newUsers = await User.countDocuments({
+//       createdAt: { $gte: startDate },
+//     });
+
+//     // 💹 مقارنة بالفترة السابقة
+//     const previousPeriodStart = new Date(startDate);
+//     const diffDays = Math.ceil((now - startDate) / (1000 * 60 * 60 * 24));
+//     previousPeriodStart.setDate(previousPeriodStart.getDate() - diffDays);
+
+//     const previousRevenue = await Order.aggregate([
+//       {
+//         $match: {
+//           createdAt: { $gte: previousPeriodStart, $lt: startDate },
+//           status: "paid",
+//         },
+//       },
+//       {
+//         $group: { _id: null, total: { $sum: "$total" } },
+//       },
+//     ]);
+
+//     const growthRate =
+//       previousRevenue.length > 0
+//         ? (
+//             ((totals.totalRevenue - previousRevenue[0].total) /
+//               previousRevenue[0].total) *
+//             100
+//           ).toFixed(2)
+//         : 0;
+
+//     const previousOrders = await Order.countDocuments({
+//       createdAt: { $gte: previousPeriodStart, $lt: startDate },
+//       ...(status ? { status } : {}),
+//     });
+
+//     const avgOrderValue =
+//       totals.totalOrders > 0
+//         ? (totals.totalRevenue / totals.totalOrders).toFixed(2)
+//         : 0;
+
+//     // ✅ الرد النهائي
+//     res.json({
+//       summary: {
+//         ...totals,
+//         avgOrderValue: Number(avgOrderValue),
+//       },
+//       trend: revenueTrend,
+//       ordersTrend,
+//       growthRate: Number(growthRate),
+//       topProducts,
+//       newUsers,
+//     });
+//   } catch (error) {
+//     console.error("❌ Analytics Error:", error);
+//     res.status(500).json({ error: "Failed to get analytics" });
+//   }
+// });
+
 router.get("/orders/analytics", async (req, res) => {
   try {
-    const { range = "month", status } = req.query;
+    const { range = "month", status, paymentMethod } = req.query;
     const now = new Date();
-    let startDate, dateFormat;
+    let startDate, dateFormat, groupBy;
 
-    // 🗓️ تحديد النطاق الزمني
+    // 🗓️ Time range configuration
     switch (range) {
       case "day":
         startDate = new Date(now);
         startDate.setHours(0, 0, 0, 0);
         dateFormat = "%Y-%m-%d %H:00";
+        groupBy = "hour";
         break;
       case "week":
         startDate = new Date(now);
         startDate.setDate(now.getDate() - 7);
         dateFormat = "%Y-%m-%d";
+        groupBy = "day";
         break;
       case "month":
         startDate = new Date(now.getFullYear(), now.getMonth(), 1);
         dateFormat = "%Y-%m-%d";
+        groupBy = "day";
         break;
       case "year":
         startDate = new Date(now.getFullYear(), 0, 1);
         dateFormat = "%Y-%m";
+        groupBy = "month";
         break;
       default:
         startDate = new Date(0);
         dateFormat = "%Y-%m-%d";
+        groupBy = "day";
     }
 
-    // 🧩 الفلاتر الديناميكية
-    const matchStage = { createdAt: { $gte: startDate } };
-    if (status) matchStage.status = status;
-
-    // 📊 إجماليات عامة
-    const generalStats = await Order.aggregate([
-      { $match: matchStage },
-      {
-        $group: {
-          _id: "$status",
-          count: { $sum: 1 },
-          totalRevenue: { $sum: "$total" },
-        },
-      },
-    ]);
-
-    const totals = {
-      totalOrders: 0,
-      pending: 0,
-      paid: 0,
-      cancelled: 0,
-      totalRevenue: 0,
+    // 🧩 Base match conditions
+    const matchStage = {
+      createdAt: { $gte: startDate },
+      ...(status && { status }),
+      ...(paymentMethod && { "payment.method": paymentMethod }),
     };
 
-    generalStats.forEach((s) => {
-      totals.totalOrders += s.count;
-      totals.totalRevenue += s.totalRevenue || 0;
-      if (s._id === "pending") totals.pending = s.count;
-      if (s._id === "paid") totals.paid = s.count;
-      if (s._id === "cancelled") totals.cancelled = s.count;
-    });
-
-    // 📈 الإيرادات حسب الفترة الزمنية
-    const revenueTrend = await Order.aggregate([
-      { $match: { ...matchStage, status: "paid" } },
-      {
-        $group: {
-          _id: { $dateToString: { format: dateFormat, date: "$createdAt" } },
-          totalRevenue: { $sum: "$total" },
+    // 📊 1. General Statistics
+    const [generalStats, paymentMethods] = await Promise.all([
+      // General order stats
+      Order.aggregate([
+        { $match: matchStage },
+        {
+          $group: {
+            _id: "$status",
+            count: { $sum: 1 },
+            totalRevenue: { $sum: "$totalPrice" },
+            avgOrderValue: { $avg: "$totalPrice" },
+            minOrderValue: { $min: "$totalPrice" },
+            maxOrderValue: { $max: "$totalPrice" },
+          },
         },
-      },
-      { $sort: { _id: 1 } },
+      ]),
+
+      // Payment method distribution
+      Order.aggregate([
+        { $match: matchStage },
+        {
+          $group: {
+            _id: "$payment.method",
+            count: { $sum: 1 },
+            totalAmount: { $sum: "$totalPrice" },
+          },
+        },
+      ]),
     ]);
 
-    // 📊 توزيع الحالات مع الوقت (optional)
-    const ordersTrend = await Order.aggregate([
+    // Calculate totals
+    const totals = {
+      totalOrders: 0,
+      totalRevenue: 0,
+      avgOrderValue: 0,
+      byStatus: {},
+      paymentMethods: paymentMethods.reduce((acc, method) => {
+        acc[method._id] = {
+          count: method.count,
+          totalAmount: method.totalAmount,
+        };
+        return acc;
+      }, {}),
+    };
+
+    generalStats.forEach((stat) => {
+      totals.totalOrders += stat.count;
+      totals.totalRevenue += stat.totalRevenue || 0;
+      totals.byStatus[stat._id] = {
+        count: stat.count,
+        totalRevenue: stat.totalRevenue,
+        avgOrderValue: stat.avgOrderValue,
+        minOrderValue: stat.minOrderValue,
+        maxOrderValue: stat.maxOrderValue,
+      };
+    });
+
+    totals.avgOrderValue =
+      totals.totalOrders > 0 ? totals.totalRevenue / totals.totalOrders : 0;
+
+    // 📈 2. Time-based Analytics
+    const [revenueTrend, ordersByTime, topProducts, userAcquisition] =
+      await Promise.all([
+        // Revenue trend
+        Order.aggregate([
+          { $match: { ...matchStage, "payment.status": "paid" } },
+          {
+            $group: {
+              _id: {
+                $dateToString: { format: dateFormat, date: "$createdAt" },
+              },
+              totalRevenue: { $sum: "$totalPrice" },
+              orderCount: { $sum: 1 },
+            },
+          },
+          { $sort: { _id: 1 } },
+        ]),
+
+        // Orders by time of day
+        Order.aggregate([
+          { $match: matchStage },
+          {
+            $group: {
+              _id: { $hour: "$createdAt" },
+              count: { $sum: 1 },
+            },
+          },
+          { $sort: { _id: 1 } },
+        ]),
+
+        // Top selling products
+        Order.aggregate([
+          { $match: matchStage },
+          { $unwind: "$items" },
+          {
+            $group: {
+              _id: {
+                productId: "$items.product",
+                variantId: "$items.variant",
+                size: "$items.size",
+                color: "$items.color",
+              },
+              name: { $first: "$items.productSnapshot.title" },
+              image: { $first: "$items.productSnapshot.image" },
+              totalSold: { $sum: "$items.quantity" },
+              totalRevenue: {
+                $sum: { $multiply: ["$items.quantity", "$items.price"] },
+              },
+            },
+          },
+          { $sort: { totalRevenue: -1 } },
+          { $limit: 10 },
+        ]),
+
+        // User acquisition
+        Order.aggregate([
+          { $match: matchStage },
+          {
+            $lookup: {
+              from: "users",
+              localField: "user",
+              foreignField: "_id",
+              as: "userData",
+            },
+          },
+          { $unwind: "$userData" },
+          {
+            $group: {
+              _id: {
+                $dateToString: {
+                  format: dateFormat,
+                  date: "$userData.createdAt",
+                },
+              },
+              newUsers: { $sum: 1 },
+            },
+          },
+          { $sort: { _id: 1 } },
+        ]),
+      ]);
+
+    // 📊 3. Customer Analytics
+    const customerStats = await Order.aggregate([
       { $match: matchStage },
       {
         $group: {
-          _id: {
-            date: { $dateToString: { format: dateFormat, date: "$createdAt" } },
-            status: "$status",
-          },
-          count: { $sum: 1 },
+          _id: "$user",
+          orderCount: { $sum: 1 },
+          totalSpent: { $sum: "$totalPrice" },
         },
       },
       {
         $group: {
-          _id: "$_id.date",
-          statuses: {
+          _id: null,
+          totalCustomers: { $sum: 1 },
+          repeatCustomers: {
+            $sum: { $cond: [{ $gt: ["$orderCount", 1] }, 1, 0] },
+          },
+          avgOrdersPerCustomer: { $avg: "$orderCount" },
+          avgCustomerValue: { $avg: "$totalSpent" },
+          topSpenders: {
             $push: {
-              status: "$_id.status",
-              count: "$count",
+              userId: "$_id",
+              orderCount: "$orderCount",
+              totalSpent: "$totalSpent",
             },
           },
         },
@@ -456,113 +779,157 @@ router.get("/orders/analytics", async (req, res) => {
       {
         $project: {
           _id: 0,
-          date: "$_id",
-          statuses: 1,
+          totalCustomers: 1,
+          repeatCustomers: 1,
+          repeatCustomerRate: {
+            $cond: [
+              { $eq: ["$totalCustomers", 0] },
+              0,
+              { $divide: ["$repeatCustomers", "$totalCustomers"] },
+            ],
+          },
+          avgOrdersPerCustomer: 1,
+          avgCustomerValue: 1,
+          topSpenders: { $slice: ["$topSpenders", 5] },
         },
       },
-      { $sort: { date: 1 } },
     ]);
 
-    // 🏆 أعلى المنتجات مبيعًا (مع الصور)
-    const topProducts = await Order.aggregate([
-      { $unwind: "$items" },
+    // 🚚 4. Shipping Analytics
+    const shippingStats = await Order.aggregate([
+      { $match: { ...matchStage, shippingPrice: { $gt: 0 } } },
       {
         $group: {
-          _id: "$items.productId",
-          totalSold: { $sum: "$items.quantity" },
-          totalRevenue: { $sum: "$items.price" },
-          variantId: { $first: "$items.variantId" },
+          _id: null,
+          totalShippingRevenue: { $sum: "$shippingPrice" },
+          avgShippingCost: { $avg: "$shippingPrice" },
+          byCity: {
+            $addToSet: {
+              city: "$shippingAddress.city",
+              count: { $sum: 1 },
+            },
+          },
         },
       },
-      {
-        $lookup: {
-          from: "products",
-          localField: "_id",
-          foreignField: "_id",
-          as: "product",
-        },
-      },
-      { $unwind: "$product" },
-      {
-        $lookup: {
-          from: "productvariants",
-          localField: "variantId",
-          foreignField: "_id",
-          as: "variant",
-        },
-      },
-      { $unwind: "$variant" },
-      {
-        $project: {
-          _id: 1,
-          totalSold: 1,
-          totalRevenue: 1,
-          name: "$product.title",
-          image: { $arrayElemAt: ["$variant.images", 0] }, // ✅ أول صورة
-        },
-      },
-      { $sort: { totalSold: -1 } },
-      { $limit: 5 },
     ]);
 
-    // 👥 المستخدمين الجدد
-    const newUsers = await User.countDocuments({
-      createdAt: { $gte: startDate },
-    });
+    // 📊 5. Discount Analysis
+    const discountAnalysis = await Order.aggregate([
+      { $match: { ...matchStage, discount: { $gt: 0 } } },
+      {
+        $group: {
+          _id: null,
+          totalDiscounts: { $sum: "$discount" },
+          avgDiscount: { $avg: "$discount" },
+          discountOrders: { $sum: 1 },
+          totalDiscountPercentage: {
+            $avg: {
+              $multiply: [
+                {
+                  $divide: [
+                    "$discount",
+                    { $add: ["$totalPrice", "$discount"] },
+                  ],
+                },
+                100,
+              ],
+            },
+          },
+        },
+      },
+    ]);
 
-    // 💹 مقارنة بالفترة السابقة
+    // 📈 6. Growth Metrics
     const previousPeriodStart = new Date(startDate);
-    const diffDays = Math.ceil((now - startDate) / (1000 * 60 * 60 * 24));
-    previousPeriodStart.setDate(previousPeriodStart.getDate() - diffDays);
+    const diffTime = now - startDate;
+    previousPeriodStart.setTime(previousPeriodStart.getTime() - diffTime);
 
-    const previousRevenue = await Order.aggregate([
+    const previousPeriodStats = await Order.aggregate([
       {
         $match: {
           createdAt: { $gte: previousPeriodStart, $lt: startDate },
-          status: "paid",
+          ...(status && { status }),
+          ...(paymentMethod && { "payment.method": paymentMethod }),
         },
       },
       {
-        $group: { _id: null, total: { $sum: "$total" } },
+        $group: {
+          _id: null,
+          totalOrders: { $sum: 1 },
+          totalRevenue: { $sum: "$totalPrice" },
+          avgOrderValue: { $avg: "$totalPrice" },
+        },
       },
     ]);
 
-    const growthRate =
-      previousRevenue.length > 0
-        ? (
-            ((totals.totalRevenue - previousRevenue[0].total) /
-              previousRevenue[0].total) *
-            100
-          ).toFixed(2)
-        : 0;
+    const previousPeriod = previousPeriodStats[0] || {
+      totalOrders: 0,
+      totalRevenue: 0,
+      avgOrderValue: 0,
+    };
 
-    const previousOrders = await Order.countDocuments({
-      createdAt: { $gte: previousPeriodStart, $lt: startDate },
-      ...(status ? { status } : {}),
-    });
+    const calculateGrowth = (current, previous) => {
+      if (previous === 0) return current > 0 ? 100 : 0;
+      return ((current - previous) / previous) * 100;
+    };
 
-    const avgOrderValue =
-      totals.totalOrders > 0
-        ? (totals.totalRevenue / totals.totalOrders).toFixed(2)
-        : 0;
+    const growthMetrics = {
+      ordersGrowth: calculateGrowth(
+        totals.totalOrders,
+        previousPeriod.totalOrders
+      ),
+      revenueGrowth: calculateGrowth(
+        totals.totalRevenue,
+        previousPeriod.totalRevenue
+      ),
+      aovGrowth: calculateGrowth(
+        totals.avgOrderValue,
+        previousPeriod.avgOrderValue
+      ),
+    };
 
-    // ✅ الرد النهائي
+    // ✅ Final Response
     res.json({
       summary: {
         ...totals,
-        avgOrderValue: Number(avgOrderValue),
+        growth: growthMetrics,
+        timeRange: {
+          start: startDate,
+          end: now,
+          range,
+          groupBy,
+        },
       },
-      trend: revenueTrend,
-      ordersTrend,
-      growthRate: Number(growthRate),
-      topProducts,
-      newUsers,
+      trends: {
+        revenue: revenueTrend,
+        ordersByTime,
+        userAcquisition,
+      },
+      products: {
+        topSelling: topProducts,
+      },
+      customers: customerStats[0] || {},
+      shipping: shippingStats[0] || {},
+      discounts: discountAnalysis[0] || {},
+      previousPeriodComparison: {
+        current: {
+          start: startDate,
+          end: now,
+          ...totals,
+        },
+        previous: {
+          start: previousPeriodStart,
+          end: startDate,
+          ...previousPeriod,
+        },
+      },
     });
   } catch (error) {
     console.error("❌ Analytics Error:", error);
-    res.status(500).json({ error: "Failed to get analytics" });
+    res.status(500).json({
+      error: "Failed to generate analytics",
+      details: error.message,
+    });
   }
 });
-
-
 module.exports = router;
