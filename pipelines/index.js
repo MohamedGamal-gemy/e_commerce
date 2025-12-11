@@ -49,10 +49,10 @@ function buildPipeline({ query, page = 1, limit = 20 }) {
           {
             $project: {
               productId: "$_id",
-              title: "$title",
+              // title: "$title",
               slug: "$slug",
-              price: "$price",
-              rating: "$rating",
+              // price: "$price",
+              // rating: "$rating",
               productTypeName: "$productTypeName",
               mainImage: "$mainImage",
               variant: "$variantsForData",
@@ -64,9 +64,9 @@ function buildPipeline({ query, page = 1, limit = 20 }) {
             $project: {
               variantId: "$variant._id",
               _id: "$productId",
-              title: 1,
+              // title: 1,
               slug: 1,
-              price: 1,
+              // price: 1,
               rating: 1,
               productTypeName: 1,
               sku: "$variant.sku",

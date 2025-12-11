@@ -62,7 +62,7 @@ exports.buildColorsImagesFacet = function buildColorsImagesFacet() {
           $push: {
             name: "$_id.colorName",
             value: "$_id.colorValue",
-            image: "$image",
+            // image: "$image",
             count: "$count",
           },
         },

@@ -360,7 +360,7 @@
 //       )}:page:${page}:limit:${limit}`;
 
 //       // const result = await getCachedOrRun(cacheKey, 60, async () => {
-//       const result = await getCachedOrRun(cacheKey, 60, async () => {
+//       const result = await getC achedOrRun(cacheKey, 60, async () => {
 //         const pipeline = buildPipeline({ query: req.query, page, limit });
 //         const aggResult = await ProductModel.aggregate(pipeline).allowDiskUse(
 //           true
@@ -458,6 +458,181 @@ function buildVariantMatch({ color }) {
 // -------------------------------
 // Build aggregation pipeline
 // -------------------------------
+// function buildPipeline({ query, page = 1, limit = 20 }) {
+//   const skip = (page - 1) * limit;
+//   const productMatch = buildProductMatch(query);
+//   const variantMatch = buildVariantMatch(query);
+
+//   const sortBy = query.sortBy;
+//   const sortPipeline = buildSortPipeline(sortBy) || [];
+
+//   return [
+//     { $match: productMatch },
+
+//     variantsLookupCombined(variantMatch),
+
+//     ...sortPipeline, // apply sorting before unwind
+//     {
+//       $addFields: {
+//         discountIsActive: {
+//           $and: [
+//             { $gte: [new Date(), "$discountStart"] },
+//             { $lte: [new Date(), "$discountEnd"] },
+//           ],
+//         },
+
+//         finalPrice: {
+//           $cond: [
+//             {
+//               $and: [
+//                 { $gte: [new Date(), "$discountStart"] },
+//                 { $lte: [new Date(), "$discountEnd"] },
+//               ],
+//             },
+//             {
+//               $cond: [
+//                 { $eq: ["$discountType", "percentage"] },
+//                 {
+//                   $round: [
+//                     {
+//                       $max: [
+//                         0,
+//                         {
+//                           $multiply: [
+//                             "$originalPrice",
+//                             {
+//                               $subtract: [
+//                                 1,
+//                                 { $divide: ["$discountValue", 100] },
+//                               ],
+//                             },
+//                           ],
+//                         },
+//                       ],
+//                     },
+//                     0,
+//                   ],
+//                 },
+//                 {
+//                   $cond: [
+//                     { $eq: ["$discountType", "flat"] },
+//                     {
+//                       $max: [
+//                         0,
+//                         { $subtract: ["$originalPrice", "$discountValue"] },
+//                       ],
+//                     },
+//                     "$originalPrice",
+//                   ],
+//                 },
+//               ],
+//             },
+//             "$originalPrice",
+//           ],
+//         },
+
+//         discountPercentage: {
+//           $cond: [
+//             {
+//               $and: [
+//                 { $gte: [new Date(), "$discountStart"] },
+//                 { $lte: [new Date(), "$discountEnd"] },
+//               ],
+//             },
+//             {
+//               $round: [
+//                 {
+//                   $multiply: [
+//                     {
+//                       $divide: [
+//                         { $subtract: ["$originalPrice", "$finalPrice"] },
+//                         "$originalPrice",
+//                       ],
+//                     },
+//                     100,
+//                   ],
+//                 },
+//                 0,
+//               ],
+//             },
+//             0,
+//           ],
+//         },
+//       },
+//     },
+
+//     //
+//     {
+//       $facet: {
+//         data: [
+//           {
+//             $addFields: {
+//               variantsCombined: {
+//                 $sortArray: {
+//                   input: "$variantsCombined",
+//                   sortBy: { "color.name": 1 }, // ثابت لتسهيل declump
+//                 },
+//               },
+//             },
+//           },
+
+//           {
+//             $unwind: {
+//               path: "$variantsCombined",
+//               preserveNullAndEmptyArrays: false,
+//             },
+//           },
+
+//           {
+//             $project: {
+//               productId: "$_id",
+//               title: 1,
+//               originalPrice: 1,
+//               discountIsActive: 1,
+//               discountPercentage: 1,
+//               finalPrice: 1,
+//               rating: 1,
+//               slug: 1,
+//               price: 1,
+//               productTypeName: 1,
+//               mainImage: 1,
+//               variant: "$variantsCombined",
+//             },
+//           },
+
+//           ...buildPagination({ skip, limit }),
+
+//           {
+//             $project: {
+//               _id: "$variant._id",
+//               productId: 1,
+//               originalPrice: 1,
+//               discountIsActive: 1,
+//               discountPercentage: 1,
+//               finalPrice: 1,
+//               productTypeName: 1,
+//               title: 1,
+//               rating: 1,
+//               slug: 1,
+//               price: 1,
+//               image: {
+//                 $ifNull: [
+//                   { $arrayElemAt: ["$variant.images.url", 0] },
+//                   "$mainImage",
+//                 ],
+//               },
+//               color: "$variant.color",
+//             },
+//           },
+//         ],
+
+//         totalVariants: [{ $count: "count" }],
+//         colorsImagesMap: buildColorsImagesFacet(),
+//       },
+//     },
+//   ];
+// }
+
 function buildPipeline({ query, page = 1, limit = 20 }) {
   const skip = (page - 1) * limit;
   const productMatch = buildProductMatch(query);
@@ -473,60 +648,165 @@ function buildPipeline({ query, page = 1, limit = 20 }) {
 
     ...sortPipeline, // apply sorting before unwind
 
+    // -----------------------------
+    // Stage 1: حساب discountIsActive و finalPrice
+    // -----------------------------
+    {
+      $addFields: {
+        discountIsActive: {
+          $and: [
+            { $gte: [new Date(), "$discountStart"] },
+            { $lte: [new Date(), "$discountEnd"] },
+          ],
+        },
+        finalPrice: {
+          $cond: [
+            {
+              $and: [
+                { $gte: [new Date(), "$discountStart"] },
+                { $lte: [new Date(), "$discountEnd"] },
+              ],
+            },
+            {
+              $cond: [
+                { $eq: ["$discountType", "percentage"] },
+                {
+                  $round: [
+                    {
+                      $max: [
+                        0,
+                        {
+                          $multiply: [
+                            "$originalPrice",
+                            {
+                              $subtract: [
+                                1,
+                                { $divide: ["$discountValue", 100] },
+                              ],
+                            },
+                          ],
+                        },
+                      ],
+                    },
+                    0,
+                  ],
+                },
+                {
+                  $cond: [
+                    { $eq: ["$discountType", "flat"] },
+                    {
+                      $max: [
+                        0,
+                        { $subtract: ["$originalPrice", "$discountValue"] },
+                      ],
+                    },
+                    "$originalPrice",
+                  ],
+                },
+              ],
+            },
+            "$originalPrice",
+          ],
+        },
+      },
+    },
+
+    // -----------------------------
+    // Stage 2: حساب discountPercentage بعد finalPrice
+    // -----------------------------
+    {
+      $addFields: {
+        discountPercentage: {
+          $cond: [
+            "$discountIsActive",
+            {
+              $round: [
+                {
+                  $multiply: [
+                    {
+                      $divide: [
+                        { $subtract: ["$originalPrice", "$finalPrice"] },
+                        "$originalPrice",
+                      ],
+                    },
+                    100,
+                  ],
+                },
+                0,
+              ],
+            },
+            0,
+          ],
+        },
+      },
+    },
+
+    // -----------------------------
+    // Stage 3: ترتيب وفصل الـ variants
+    // -----------------------------
+    {
+      $addFields: {
+        variantsCombined: {
+          $sortArray: {
+            input: "$variantsCombined",
+            sortBy: { "color.name": 1 },
+          },
+        },
+      },
+    },
+
+    {
+      $unwind: { path: "$variantsCombined", preserveNullAndEmptyArrays: false },
+    },
+
+    // -----------------------------
+    // Stage 4: project البيانات المطلوبة
+    // -----------------------------
+    {
+      $project: {
+        productId: "$_id",
+        title: 1,
+        originalPrice: 1,
+        discountIsActive: 1,
+        discountPercentage: 1,
+        finalPrice: 1,
+        rating: 1,
+        slug: 1,
+        price: 1,
+        productTypeName: 1,
+        mainImage: 1,
+        variant: "$variantsCombined",
+      },
+    },
+
+    ...buildPagination({ skip, limit }),
+
+    {
+      $project: {
+        _id: "$variant._id",
+        productId: 1,
+        originalPrice: 1,
+        discountIsActive: 1,
+        discountPercentage: 1,
+        finalPrice: 1,
+        productTypeName: 1,
+        title: 1,
+        rating: 1,
+        slug: 1,
+        price: 1,
+        image: {
+          $ifNull: [{ $arrayElemAt: ["$variant.images.url", 0] }, "$mainImage"],
+        },
+        color: "$variant.color",
+      },
+    },
+
+    // -----------------------------
+    // Stage 5: Facets للمجموعات والخرائط
+    // -----------------------------
     {
       $facet: {
-        data: [
-          {
-            $addFields: {
-              variantsCombined: {
-                $sortArray: {
-                  input: "$variantsCombined",
-                  sortBy: { "color.name": 1 }, // ثابت لتسهيل declump
-                },
-              },
-            },
-          },
-
-          {
-            $unwind: {
-              path: "$variantsCombined",
-              preserveNullAndEmptyArrays: false,
-            },
-          },
-
-          {
-            $project: {
-              productId: "$_id",
-              title: 1,
-              slug: 1,
-              price: 1,
-              productTypeName: 1,
-              mainImage: 1,
-              variant: "$variantsCombined",
-            },
-          },
-
-          ...buildPagination({ skip, limit }),
-
-          {
-            $project: {
-              _id: "$variant._id",
-              productId: 1,
-              productTypeName: 1,
-              title: 1,
-              slug: 1,
-              price: 1,
-              image: {
-                $ifNull: [
-                  { $arrayElemAt: ["$variant.images.url", 0] },
-                  "$mainImage",
-                ],
-              },
-              color: "$variant.color",
-            },
-          },
-        ],
-
+        data: [], // البيانات محسوبة بالفعل
         totalVariants: [{ $count: "count" }],
         colorsImagesMap: buildColorsImagesFacet(),
       },
@@ -565,6 +845,9 @@ function declump(items) {
 // -------------------------------
 async function getCachedOrRun(key, ttl, runFn) {
   if (!redis) throw new Error("Redis connection is undefined");
+  if (ttl === 0) {
+    return await runFn(); // skip cache fully
+  }
 
   const cached = await redis.get(key);
   if (cached) return JSON.parse(cached);
@@ -581,13 +864,14 @@ function getProductsAggregationHandler(ProductModel) {
   return async function productsHandler(req, res, next) {
     try {
       const page = parseInt(req.query.page || "1", 10);
-      const limit = parseInt(req.query.limit || "20", 10);
+      // const limit = parseInt(req.query.limit || "20", 10);
+      const limit = parseInt(req.query.limit || "30", 30);
 
       const cacheKey = `products:${JSON.stringify(
         req.query
       )}:page:${page}:limit:${limit}`;
 
-      const result = await getCachedOrRun(cacheKey, 60, async () => {
+      const result = await getCachedOrRun(cacheKey, 0, async () => {
         const pipeline = buildPipeline({ query: req.query, page, limit });
         const aggResult = await ProductModel.aggregate(pipeline).allowDiskUse(
           true
@@ -626,6 +910,14 @@ function getProductsAggregationHandler(ProductModel) {
           },
         };
       });
+
+      // const result = await getCachedOrRun(cacheKey, 0, async () => {
+      //   const pipeline = buildPipeline({ query: req.query, page, limit });
+      //   const aggResult = await ProductModel.aggregate(pipeline).allowDiskUse(
+      //     true
+      //   );
+      //   return aggResult;
+      // });
 
       return res.json(result);
     } catch (err) {

@@ -9,6 +9,6 @@
 const { Queue } = require("bullmq");
 const { connection } = require("../config/redis");
 
-const productQueue = new Queue("productQueue", { connection });
+const productQueue = new Queue("productAdd", { connection });
 
 module.exports = { productQueue };

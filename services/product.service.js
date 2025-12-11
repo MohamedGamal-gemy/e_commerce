@@ -2,18 +2,44 @@ const Product = require("../models/product");
 const ProductVariant = require("../models/productVariant");
 const { uploadImage } = require("../utils/file.utils");
 const cloudinary = require("cloudinary").v2;
+const fs = require("fs");
+const path = require("path");
 
 const mongoose = require("mongoose");
 const ApiError = require("../utils/ApiError");
 
 /**
- * Upload variant images in parallel
+ * Clean up temporary files after upload
+ * @param {Array<Express.Multer.File>} files - Array of files to clean up
+ */
+const cleanupTempFiles = (files) => {
+  if (!files || !Array.isArray(files)) return;
+
+  files.forEach((file) => {
+    if (file.path && fs.existsSync(file.path)) {
+      try {
+        fs.unlinkSync(file.path);
+      } catch (error) {
+        console.warn(`Failed to delete temp file ${file.path}:`, error.message);
+      }
+    }
+  });
+};
+
+/**
+ * Upload variant images in parallel with concurrency control
  * @param {Array<Express.Multer.File>} variantImages - Array of variant images
  * @param {string} productTitle - Product title (for Cloudinary folder path)
  * @param {string} colorName - Variant color name (for alt text)
+ * @param {string} productId - Product ID for folder organization
  * @returns {Promise<Array<{url: string, publicId: string, alt: string}>>}
  */
-const uploadVariantImages = async (variantImages, productTitle, colorName) => {
+const uploadVariantImages = async (
+  variantImages,
+  productTitle,
+  colorName,
+  productId = null
+) => {
   if (!variantImages || variantImages.length === 0) {
     return [];
   }
@@ -23,19 +49,37 @@ const uploadVariantImages = async (variantImages, productTitle, colorName) => {
     .toLowerCase()
     .substring(0, 50);
 
-  return Promise.all(
-    variantImages.map(async (img) => {
+  const sanitizedColor = (colorName || "default")
+    .replace(/[^a-zA-Z0-9]/g, "-")
+    .toLowerCase()
+    .substring(0, 30);
+
+  // Build folder path
+  const folderPath = productId
+    ? `products/${productId}/${sanitizedColor}`
+    : `products/variants/${sanitizedTitle}/${sanitizedColor}`;
+
+  // Upload with concurrency control (max 5 concurrent uploads)
+  const MAX_CONCURRENT = 5;
+  const uploadedImages = [];
+  const filesToCleanup = [];
+
+  for (let i = 0; i < variantImages.length; i += MAX_CONCURRENT) {
+    const chunk = variantImages.slice(i, i + MAX_CONCURRENT);
+    const uploadPromises = chunk.map(async (img) => {
       try {
         let uploadResult;
         if (img.buffer) {
-          uploadResult = await uploadImage(
-            img.buffer,
-            `products/variants/${sanitizedTitle}`
-          );
+          uploadResult = await uploadImage(img.buffer, folderPath);
         } else if (img.path) {
           uploadResult = await cloudinary.uploader.upload(img.path, {
-            folder: `products/variants/${sanitizedTitle}`,
+            folder: folderPath,
+            transformation: [
+              { width: 1200, height: 1200, crop: "limit" },
+              { quality: "auto:good" },
+            ],
           });
+          filesToCleanup.push(img);
         } else {
           throw new Error("Image must have buffer or path");
         }
@@ -46,11 +90,22 @@ const uploadVariantImages = async (variantImages, productTitle, colorName) => {
           alt: colorName || "product image",
         };
       } catch (error) {
-        console.error(`Failed to upload image for variant ${colorName}:`, error);
+        console.error(
+          `Failed to upload image for variant ${colorName}:`,
+          error
+        );
         throw new ApiError(`Failed to upload image: ${error.message}`, 500);
       }
-    })
-  );
+    });
+
+    const chunkResults = await Promise.all(uploadPromises);
+    uploadedImages.push(...chunkResults);
+  }
+
+  // Clean up temporary files after successful upload
+  cleanupTempFiles(filesToCleanup);
+
+  return uploadedImages;
 };
 
 /**
@@ -128,23 +183,27 @@ exports.createProductAndVariants = async (
     );
     const productId = product._id;
 
-    // 2️⃣ Upload images for each variant in parallel
+    // 2️⃣ Upload images for each variant
+    // Note: We upload sequentially to avoid overwhelming Cloudinary, but each variant's images upload in parallel
     for (let i = 0; i < variants.length; i++) {
       const fieldKey = `variantImages_${i}`;
       const variantImages = filesByField[fieldKey] || [];
 
-      if (variantImages.length === 0) {
+      // For CREATE: must have uploaded files (images come as files, not URLs)
+      if (!variantImages || variantImages.length === 0) {
+        const availableFields = Object.keys(filesByField).join(", ") || "none";
         throw new ApiError(
-          `No images provided for variant ${i + 1} (${variants[i].color?.name || "unknown"})`,
+          `No images provided for variant ${i + 1} (${variants[i].color?.name || "unknown"}). Expected field: ${fieldKey}, Available fields: ${availableFields}`,
           400
         );
       }
 
-      // Upload images for this variant
+      // Upload images for this variant (using productId for better folder organization)
       variants[i].images = await uploadVariantImages(
         variantImages,
         productData.title,
-        variants[i].color?.name || "product"
+        variants[i].color?.name || "product",
+        productId.toString()
       );
     }
 
@@ -162,12 +221,13 @@ exports.createProductAndVariants = async (
       { session }
     );
 
-    // 5️⃣ Recalculate aggregates (stock, colors, images, etc.)
-    await Product.recalcAggregates(productId);
-
-    // ✅ Commit transaction
+    // ✅ Commit transaction FIRST (before recalcAggregates to avoid hook conflicts)
     await session.commitTransaction();
     session.endSession();
+
+    // 5️⃣ Recalculate aggregates AFTER transaction commits (to avoid transaction conflicts)
+    // This will trigger hooks that add jobs to queue, but that's fine since transaction is committed
+    await Product.recalcAggregates(productId);
 
     return productId;
   } catch (error) {
@@ -286,6 +346,9 @@ exports.updateProductAndVariants = async (
   // For complex updates (with variants or file uploads), use transaction
   const session = await mongoose.startSession();
   session.startTransaction();
+  
+  // Variable to collect images for deletion after transaction commits
+  let imagesToDelete = [];
 
   try {
     // 1️⃣ Check if product exists
@@ -341,7 +404,8 @@ exports.updateProductAndVariants = async (
           const uploadedImages = await uploadVariantImages(
             variantImages,
             productData.title || existingProduct.title,
-            variants[i].color?.name || "product"
+            variants[i].color?.name || "product",
+            productId.toString()
           );
           
           // Merge with existing images if variant has _id (updating existing variant)
@@ -350,11 +414,27 @@ exports.updateProductAndVariants = async (
               (v) => v._id.toString() === variants[i]._id.toString()
             );
             if (existingVariant) {
-              // Merge uploaded images with existing images
-              variants[i].images = [
-                ...(existingVariant.images || []),
-                ...uploadedImages,
-              ];
+              // Get existing images, remove deleted ones, then add new uploaded images
+              const existingImages = (existingVariant.images || []).filter(
+                (img) => {
+                  // Remove images that are in removedImages array
+                  if (variants[i].removedImages && variants[i].removedImages.length > 0) {
+                    return !variants[i].removedImages.includes(img.publicId);
+                  }
+                  return true;
+                }
+              );
+
+              // Collect removed images for deletion
+              if (variants[i].removedImages && variants[i].removedImages.length > 0) {
+                const removedImgs = (existingVariant.images || []).filter((img) =>
+                  variants[i].removedImages.includes(img.publicId)
+                );
+                imagesToDelete.push(...removedImgs);
+              }
+
+              // Merge: existing (after removal) + new uploaded
+              variants[i].images = [...existingImages, ...uploadedImages];
             } else {
               variants[i].images = uploadedImages;
             }
@@ -364,16 +444,37 @@ exports.updateProductAndVariants = async (
           }
         } else if (variants[i]._id) {
           // Existing variant with no new file uploads
-          // If images array is not provided or empty, keep existing images
-          if (!variants[i].images || variants[i].images.length === 0) {
-            const existingVariant = existingVariants.find(
-              (v) => v._id.toString() === variants[i]._id.toString()
-            );
-            if (existingVariant) {
+          const existingVariant = existingVariants.find(
+            (v) => v._id.toString() === variants[i]._id.toString()
+          );
+
+          if (existingVariant) {
+            // Handle removed images
+            if (variants[i].removedImages && variants[i].removedImages.length > 0) {
+              // Remove deleted images
+              const remainingImages = (existingVariant.images || []).filter(
+                (img) => !variants[i].removedImages.includes(img.publicId)
+              );
+
+              // Collect removed images for deletion
+              const removedImgs = (existingVariant.images || []).filter((img) =>
+                variants[i].removedImages.includes(img.publicId)
+              );
+              imagesToDelete.push(...removedImgs);
+
+              // Use remaining images + any provided in request
+              variants[i].images = [
+                ...remainingImages,
+                ...(variants[i].images || []),
+              ];
+            } else if (variants[i].images && variants[i].images.length > 0) {
+              // User provided images array (keeping only specified ones)
+              variants[i].images = variants[i].images;
+            } else {
+              // Keep all existing images
               variants[i].images = existingVariant.images || [];
             }
           }
-          // If images array is provided, use it as is (user might be updating/removing images)
         }
         // For new variants (no _id) without file uploads, images must be provided in request body
       }
@@ -388,12 +489,12 @@ exports.updateProductAndVariants = async (
         (v) => !variantIdsToKeep.some((id) => id.equals(v._id))
       );
 
-      // Delete images of removed variants
-      for (const variant of variantsToDelete) {
-        await deleteVariantImages(variant.images || []);
-      }
-
-      // Delete removed variants
+      // Collect images to delete (we'll delete them after transaction commits)
+      imagesToDelete = variantsToDelete.flatMap(
+        (variant) => variant.images || []
+      );
+      
+      // Delete removed variants (within transaction)
       if (variantsToDelete.length > 0) {
         await ProductVariant.deleteMany(
           {
@@ -446,12 +547,22 @@ exports.updateProductAndVariants = async (
       );
     }
 
-    // 9️⃣ Recalculate aggregates
-    await Product.recalcAggregates(productId);
-
-    // ✅ Commit transaction
+    // ✅ Commit transaction FIRST (before recalcAggregates to avoid hook conflicts)
     await session.commitTransaction();
     session.endSession();
+
+    // 9️⃣ Recalculate aggregates AFTER transaction commits (to avoid transaction conflicts)
+    // This will trigger hooks that add jobs to queue, but that's fine since transaction is committed
+    await Product.recalcAggregates(productId);
+
+    // 🗑️ Delete images from Cloudinary after transaction commits (non-blocking)
+    // This prevents Cloudinary operations from blocking the transaction
+    if (imagesToDelete && imagesToDelete.length > 0) {
+      deleteVariantImages(imagesToDelete).catch((err) => {
+        console.error("Failed to delete variant images from Cloudinary:", err);
+        // Don't throw - image deletion failure shouldn't fail the update
+      });
+    }
 
     return productId;
   } catch (error) {

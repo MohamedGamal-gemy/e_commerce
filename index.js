@@ -9,6 +9,7 @@ const morgan = require("morgan");
 const cookieParser = require("cookie-parser");
 require("./queues/workers/productWorker");
 
+
 const { notFound, errorHandler } = require("./middlewares/errors");
 const connectToDB = require("./config/db");
 
@@ -131,6 +132,7 @@ app.use("/api/cart", require("./routes/cart"));
 app.use("/api/checkout", require("./routes/checkout"));
 // app.use("/api/users", require("./routes/userRoutes"));
 app.use("/api/products", require("./routes/products"));
+// app.use("/api/products", require("./routes/productRoutes"));
 app.use("/api/reviews", require("./routes/reviewRoutes"));
 app.use("/api/auth", require("./routes/auth"));
 

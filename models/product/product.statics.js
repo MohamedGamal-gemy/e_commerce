@@ -44,21 +44,34 @@ module.exports = (schema) => {
 
       // 3️⃣ If no variants exist → zero out values
       if (variantIds.length === 0) {
-        await this.findByIdAndUpdate(productId, {
-          totalStock: 0,
-          numVariants: 0,
-          isAvailable: false,
-        });
+        // Use updateOne instead of findByIdAndUpdate to avoid triggering hooks
+        await this.updateOne(
+          { _id: productId },
+          {
+            $set: {
+              totalStock: 0,
+              numVariants: 0,
+              isAvailable: false,
+            },
+          }
+        );
         return;
       }
 
       // 4️⃣ Update product with aggregated values
       // Note: colorNames and images are no longer stored - use colorPreviews from aggregate instead
-      await this.findByIdAndUpdate(productId, {
-        totalStock,
-        numVariants: variantIds.length,
-        isAvailable: totalStock > 0,
-      });
+      // Use updateOne instead of findByIdAndUpdate to avoid triggering post hooks
+      // This prevents the recalculateStock job from being queued again
+      await this.updateOne(
+        { _id: productId },
+        {
+          $set: {
+            totalStock,
+            numVariants: variantIds.length,
+            isAvailable: totalStock > 0,
+          },
+        }
+      );
     } catch (error) {
       console.error("❌ Error in recalcAggregates:", error);
       throw error;

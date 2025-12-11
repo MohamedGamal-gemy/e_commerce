@@ -27,9 +27,16 @@ DELETE    http://localhost:9000/api/products/691dff088fda7039d6b6ee2e
 # /690f0edf809c79e39224f09c
 # /neutral-signature-soft-touch-wool-rich-epsom-coat-24f09c
 ### Delete
-GET  http://localhost:9000/api/product-types
+GET  http://localhost:9000/api/products/neutral-signature-soft-touch-wool-rich-epsom-coat-24f09c/related
+
+# 
+### 
+GET  http://localhost:9000/api/products/test/variants/by-color?color=black
 
 
+# 
+### 
+GET  http://localhost:9000/api/products
 
 
 # 

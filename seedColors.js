@@ -1,0 +1,151 @@
+require("dotenv").config();
+
+const mongoose = require("mongoose");
+const Color = require("./models/color.model");
+
+const colorsData = {
+  colors: [
+    {
+      group: "Black",
+      name: "Black",
+      value: "#000000",
+      synonyms: ["Jet Black", "Ink Black", "True Black"],
+    },
+    {
+      group: "White",
+      name: "White",
+      value: "#FFFFFF",
+      synonyms: ["Snow", "Ivory", "Pure White"],
+    },
+
+    {
+      group: "Gray",
+      name: "Light Gray",
+      value: "#D3D3D3",
+      synonyms: ["Silver", "Ash"],
+    },
+    {
+      group: "Gray",
+      name: "Gray",
+      value: "#808080",
+      synonyms: ["Medium Gray"],
+    },
+    {
+      group: "Gray",
+      name: "Dark Gray",
+      value: "#4B4B4B",
+      synonyms: ["Charcoal", "Graphite"],
+    },
+
+    {
+      group: "Blue",
+      name: "Navy",
+      value: "#001F54",
+      synonyms: ["Deep Navy", "Midnight Blue"],
+    },
+    {
+      group: "Blue",
+      name: "Blue",
+      value: "#1E90FF",
+      synonyms: ["Royal Blue", "Azure"],
+    },
+    {
+      group: "Blue",
+      name: "Light Blue",
+      value: "#ADD8E6",
+      synonyms: ["Sky Blue", "Baby Blue"],
+    },
+
+    {
+      group: "Red",
+      name: "Red",
+      value: "#FF0000",
+      synonyms: ["Scarlet", "Crimson"],
+    },
+    {
+      group: "Red",
+      name: "Maroon",
+      value: "#800000",
+      synonyms: ["Burgundy", "Wine"],
+    },
+
+    {
+      group: "Green",
+      name: "Green",
+      value: "#228B22",
+      synonyms: ["Forest Green"],
+    },
+    {
+      group: "Green",
+      name: "Olive",
+      value: "#808000",
+      synonyms: ["Army Green"],
+    },
+    {
+      group: "Green",
+      name: "Mint",
+      value: "#98FF98",
+      synonyms: ["Pale Green"],
+    },
+
+    {
+      group: "Yellow",
+      name: "Yellow",
+      value: "#FFD700",
+      synonyms: ["Gold", "Mustard"],
+    },
+
+    {
+      group: "Brown",
+      name: "Beige",
+      value: "#F5F5DC",
+      synonyms: ["Cream", "Bone", "Sand"],
+    },
+    {
+      group: "Brown",
+      name: "Brown",
+      value: "#8B4513",
+      synonyms: ["Chocolate", "Chestnut"],
+    },
+    { group: "Brown", name: "Khaki", value: "#C3B091", synonyms: ["Tan"] },
+
+    { group: "Purple", name: "Purple", value: "#800080", synonyms: ["Violet"] },
+    {
+      group: "Purple",
+      name: "Lavender",
+      value: "#E6E6FA",
+      synonyms: ["Lilac"],
+    },
+
+    { group: "Pink", name: "Pink", value: "#FFC0CB", synonyms: ["Soft Pink"] },
+    {
+      group: "Pink",
+      name: "Hot Pink",
+      value: "#FF69B4",
+      synonyms: ["Fuchsia"],
+    },
+
+    { group: "Orange", name: "Orange", value: "#FFA500", synonyms: ["Amber"] },
+  ],
+};
+
+async function seedColors() {
+  try {
+    await mongoose.connect(process.env.MONGO_URL);
+
+    console.log("Connected to MongoDB");
+
+    await Color.deleteMany({});
+    console.log("Old colors removed");
+
+    await Color.insertMany(colorsData.colors);
+    console.log("New colors inserted successfully!");
+
+    process.exit();
+  } catch (err) {
+    console.error(err);
+    process.exit(1);
+  }
+}
+
+seedColors();

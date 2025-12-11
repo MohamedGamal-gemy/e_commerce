@@ -21,7 +21,7 @@ const ProductSchema = new mongoose.Schema(
     discountValue: { type: Number, min: 0, default: 0 },
     discountStart: Date,
     discountEnd: Date,
-    discountIsActive: { type: Boolean, default: false },
+    // discountIsActive: { type: Boolean, default: false },
     //
     productType: {
       type: mongoose.Schema.Types.ObjectId,
@@ -45,7 +45,7 @@ const ProductSchema = new mongoose.Schema(
     numReviews: { type: Number, default: 0 },
 
     // Analytics
-    views: { type: Number, default: 0 },
+    // views: { type: Number, default: 0 },
     purchases: { type: Number, default: 0 },
     isNewArrival: { type: Boolean, default: false },
 
@@ -60,24 +60,22 @@ const ProductSchema = new mongoose.Schema(
     featuredUntil: Date,
 
     // Inventory Rules
-    minOrderQuantity: { type: Number, default: 1, min: 1 },
-    maxOrderQuantity: { type: Number, min: 1 },
-    allowBackorder: { type: Boolean, default: false },
+    // minOrderQuantity: { type: Number, default: 1, min: 1 },
+    // maxOrderQuantity: { type: Number, min: 1 },
+    // allowBackorder: { type: Boolean, default: false },
     warrantyPeriod: String,
 
     // SEO
     metaTitle: String,
     metaDescription: String,
-    keywords: [String],
+    // keywords: [String],
 
     // Attributes & Tags
-    attributes: [{ key: String, value: String }],
-    tags: [String],
+    // attributes: [{ key: String, value: String }],
+    // tags: [String],
     searchableText: { type: String },
 
     // Auditing
-    createdBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
-    updatedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
   },
   { timestamps: true }
 );

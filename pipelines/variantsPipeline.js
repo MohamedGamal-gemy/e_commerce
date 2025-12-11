@@ -80,11 +80,11 @@ exports.variantsLookupCombined = function variantsLookupCombined(variantMatch) {
         // Project only the needed fields
         {
           $project: {
-            sku: 1,
-            price: 1,
+            // sku: 1,
+            // price: 1,
             color: 1,
             images: 1,
-            createdAt: 1,
+            // createdAt: 1,
           },
         },
       ],

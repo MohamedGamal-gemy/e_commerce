@@ -123,36 +123,36 @@ const mongoose = require("mongoose");
 const ProductVariantSchema = require("./variant.schema");
 const { productQueue } = require("../../queues/productQueue");
 
-ProductVariantSchema.post("save", async function (doc) {
-  if (!doc) return;
-  await productQueue.add(
-    "updateProductAggregates",
-    { productId: doc.productId },
-    { jobId: `aggregates_${doc.productId.toString()}` }
-  );
-});
+// ProductVariantSchema.post("save", async function (doc) {
+//   if (!doc) return;
+//   await productQueue.add(
+//     "updateProductAggregates",
+//     { productId: doc.productId },
+//     { jobId: `aggregates_${doc.productId.toString()}` }
+//   );
+// });
 
-ProductVariantSchema.post("findOneAndUpdate", async function (doc) {
-  if (!doc) return;
-  await productQueue.add(
-    "updateProductAggregates",
-    { productId: doc.productId },
-    { jobId: `aggregates_${doc.productId.toString()}` }
-  );
-});
+// ProductVariantSchema.post("findOneAndUpdate", async function (doc) {
+//   if (!doc) return;
+//   await productQueue.add(
+//     "updateProductAggregates",
+//     { productId: doc.productId },
+//     { jobId: `aggregates_${doc.productId.toString()}` }
+//   );
+// });
 
-ProductVariantSchema.post("findOneAndDelete", async function (doc) {
-  if (!doc) return;
-  const Product = mongoose.model("Product");
-  await Product.findByIdAndUpdate(doc.productId, {
-    $pull: { variants: doc._id },
-  });
+// ProductVariantSchema.post("findOneAndDelete", async function (doc) {
+//   if (!doc) return;
+//   const Product = mongoose.model("Product");
+//   await Product.findByIdAndUpdate(doc.productId, {
+//     $pull: { variants: doc._id },
+//   });
 
-  await productQueue.add(
-    "updateProductAggregates",
-    { productId: doc.productId },
-    { jobId: `aggregates_${doc.productId.toString()}` }
-  );
-});
+//   await productQueue.add(
+//     "updateProductAggregates",
+//     { productId: doc.productId },
+//     { jobId: `aggregates_${doc.productId.toString()}` }
+//   );
+// });
 
 module.exports = ProductVariantSchema;

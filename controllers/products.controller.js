@@ -1,6 +1,9 @@
 const Product = require("../models/product");
+const { productQueue } = require("../queues/productQueue");
+const fs = require("fs"); // للاستخدام المتزامن في catch block
+
+const cloudinary = require("../config/cloudinary");
 const mongoose = require("mongoose");
-const ProductType = require("../models/productType");
 const ProductVariant = require("../models/productVariant");
 const ApiError = require("../utils/ApiError");
 const ApiResponse = require("../utils/ApiResponse");
@@ -9,83 +12,511 @@ const {
   createProductSchema,
   updateProductSchema,
 } = require("../validations/productValidation");
-// const { groupFilesByField } = require("../utils/file.utils");
 const {
   createProductAndVariants,
   updateProductAndVariants,
   deleteProductAndVariants,
 } = require("../services/product.service");
-const uploadVariantImages = require("../utils/uploadVariantImages");
-const { groupFilesByField } = require("../utils/file.utils");
-const { productQueue } = require("../queues/productQueue");
-const { deleteImage } = require("../utils/file.utils");
-
-// #######################################
 const {
-  buildPipeline,
+  parseVariants,
+  mapVariantFiles,
+  prepareProductData,
+  fetchProductWithRelations,
+} = require("../utils/productHelpers");
+
+// Import aggregation handler
+const {
   getProductsAggregationHandler,
-} = require("../pipelines");
-
+} = require("../handlers/productsAggregationHandler");
 const getProducts = getProductsAggregationHandler(require("../models/product"));
+
 exports.getProducts = getProducts;
+/**
+ * @desc Create a new product with variants
+ * @route POST /api/products
+ * @access Private/Admin
+ */
+// exports.createProduct = asyncHandler(async (req, res, next) => {
+//   // 1️⃣ Parse variants
+//   const variants = parseVariants(req.body.variants);
 
-// #######################################
-exports.createProduct = async (req, res) => {
+//   // 2️⃣ Validate request data
+//   const { error, value } = createProductSchema.validate(
+//     { ...req.body, variants },
+//     { abortEarly: false }
+//   );
+
+//   if (error) {
+//     const errorMessages = error.details
+//       .map((detail) => detail.message)
+//       .join(", ");
+//     return next(new ApiError(`Validation error: ${errorMessages}`, 400));
+//   }
+
+//   // 3️⃣ Prepare product data with defaults
+//   const { variants: validatedVariants, ...productData } = value;
+//   const finalProductData = prepareProductData(productData);
+
+//   // 4️⃣ Map uploaded files to variant indices
+//   const variantFilesMap = mapVariantFiles(req.files);
+
+//   // 5️⃣ Create product and variants using service
+//   const productId = await createProductAndVariants(
+//     finalProductData,
+//     validatedVariants,
+//     variantFilesMap
+//   );
+
+//   // 6️⃣ Fetch and return the created product
+//   const createdProduct = await fetchProductWithRelations(Product, productId);
+
+//   if (!createdProduct) {
+//     return next(
+//       new ApiError("Product was created but could not be retrieved", 500)
+//     );
+//   }
+
+//   res
+//     .status(201)
+//     .json(new ApiResponse(201, createdProduct, "Product created successfully"));
+// });
+
+// exports.createProduct = async (req, res, next) => {
+//   try {
+//     const { title, price, productType, status, tags, variants } = req.body;
+
+//     // Parse JSON fields
+//     const parsedTags = JSON.parse(tags || "[]");
+//     const parsedVariants = JSON.parse(variants || "[]");
+
+//     // Images
+//     const images =
+//       req.files?.map((file) => ({
+//         url: `/uploads/products/${file.filename}`,
+//         name: file.filename,
+//       })) || [];
+
+//     // Build product object
+//     const newProduct = new Product({
+//       title,
+//       price,
+//       productType,
+//       status,
+//       tags: parsedTags,
+//       variants: parsedVariants.map((v) => ({
+//         color: v.color,
+//         isDefault: v.isDefault,
+//         sizes: v.sizes,
+//         images, // تحط الصور لكل variant لو عايز
+//       })),
+//       images,
+//     });
+
+//     await newProduct.save();
+
+//     res.status(201).json({
+//       success: true,
+//       product: newProduct,
+//     });
+//   } catch (error) {
+//     next(error);
+//   }
+// };
+// exports.createProduct = async (req, res, next) => {
+//   try {
+//     const { title, price, productType, variants, tags, status } = req.body;
+
+//     const parsedVariants = JSON.parse(variants || "[]");
+//     const parsedTags = JSON.parse(tags || "[]");
+
+//     // images = [{ path, filename }]
+//     const images = req.files.map((file) => ({
+//       url: file.path, // Cloudinary URL
+//       public_id: file.filename, // Cloudinary ID
+//     }));
+
+//     const product = await Product.create({
+//       title,
+//       price,
+//       productType,
+//       variants: parsedVariants,
+//       tags: parsedTags,
+//       status,
+//       images,
+//     });
+
+//     res.status(201).json({
+//       success: true,
+//       product,
+//     });
+//   } catch (error) {
+//     next(error);
+//   }
+// };
+// const Product = require("../models/Product");
+// const ProductVariant = require("../models/ProductVariant");
+// const cloudinary = require("../utils/cloudinary"); // لو هتستخدم Cloudinary
+// const fs = require("fs");
+
+// exports.createProduct = async (req, res, next) => {
+//   try {
+//     const { title, description, price, productType, status, tags, variants } =
+//       req.body;
+
+//     const parsedVariants = JSON.parse(variants || "[]");
+//     const parsedTags = JSON.parse(tags || "[]");
+
+//     // 1️⃣ إنشاء المنتج بدون variants
+//     const product = await Product.create({
+//       title,
+//       description,
+//       price,
+//       productType,
+//       status,
+//       tags: parsedTags,
+//     });
+
+//     // 2️⃣ إنشاء Variants واحدة واحدة مع رفع الصور على Cloudinary
+//     const variantIds = [];
+
+//     let fileIndex = 0; // لإدارة ترتيب الصور في req.files
+
+//     for (let i = 0; i < parsedVariants.length; i++) {
+//       const variant = parsedVariants[i];
+//       const images = [];
+
+//       for (let j = 0; j < variant.images.length; j++) {
+//         const file = req.files[fileIndex];
+//         fileIndex++;
+//         if (!file) continue;
+
+//         // رفع الصورة على Cloudinary
+//         const uploaded = await cloudinary.uploader.upload(file.path, {
+//           folder: "products",
+//         });
+
+//         images.push({
+//           url: uploaded.secure_url,
+//           publicId: uploaded.public_id,
+//         });
+//       }
+
+//       const variantDoc = await ProductVariant.create({
+//         productId: product._id,
+//         color: variant.color,
+//         sizes: variant.sizes,
+//         images,
+//         isDefault: variant.isDefault,
+//       });
+
+//       variantIds.push(variantDoc._id);
+//     }
+
+//     // 3️⃣ تحديث الـ Product بالـ variantIds
+//     product.variants = variantIds;
+//     await product.save();
+
+//     res.status(201).json({
+//       success: true,
+//       product,
+//     });
+//   } catch (err) {
+//     next(err);
+//   }
+// };
+//
+// exports.createProduct = async (req, res, next) => {
+//   try {
+//     const { title, description, price, productType, status, tags, variants } =
+//       req.body;
+
+//     const parsedVariants = JSON.parse(variants || "[]");
+//     const parsedTags = JSON.parse(tags || "[]");
+
+//     const product = await Product.create({
+//       title,
+//       description,
+//       price,
+//       productType,
+//       status,
+//       tags: parsedTags,
+//     });
+
+//     const variantIds = [];
+//     let fileIndex = 0;
+
+//     for (const variant of parsedVariants) {
+//       const images = [];
+
+//       for (const img of variant.images) {
+//         const file = req.files[fileIndex++];
+//         if (!file) continue;
+
+//         const uploaded = await cloudinary.uploader.upload(file.path, {
+//           folder: "products",
+//         });
+
+//         images.push({ url: uploaded.secure_url, publicId: uploaded.public_id });
+//       }
+
+//       const variantDoc = await ProductVariant.create({
+//         productId: product._id,
+//         color: variant.color,
+//         sizes: variant.sizes,
+//         images,
+//         isDefault: variant.isDefault,
+//       });
+
+//       variantIds.push(variantDoc._id);
+//     }
+
+//     product.variants = variantIds;
+
+//     // 🟢 update colors summary
+//     const colorsSet = new Set();
+//     product.colors = parsedVariants
+//       .map((v) => v.color)
+//       .filter((c) => c && !colorsSet.has(c.value) && colorsSet.add(c.value));
+
+//     await product.save();
+
+//     res.status(201).json({ success: true, product });
+//   } catch (err) {
+//     next(err);
+//   }
+// };
+
+// exports.createProduct = async (req, res, next) => {
+//   try {
+//     const { title, description, price, productType, status, tags, variants } =
+//       req.body;
+
+//     const parsedVariants = JSON.parse(variants || "[]");
+//     const parsedTags = JSON.parse(tags || "[]");
+
+//     const product = await Product.create({
+//       title,
+//       description,
+//       price,
+//       productType,
+//       status,
+//       tags: parsedTags,
+//     });
+
+//     // Add Job
+//     productQueue.add("processProduct", {
+//       productId: product._id,
+//       parsedVariants,
+//       files: req.files,
+//     });
+
+//     res.status(201).json({
+//       success: true,
+//       message:
+//         "Product created. Images & variants are processing in background.",
+//       productId: product._id,
+//     });
+//   } catch (err) {
+//     next(err);
+//   }
+// };
+
+// createProduct.js
+// exports.createProduct = async (req, res, next) => {
+//   try {
+//     const { title, description, price, productType, status, tags, variants } =
+//       req.body;
+
+//     // التأكد من أن variants و tags مصفوفات صالحة
+//     const parsedVariants = JSON.parse(variants || "[]");
+//     const parsedTags = JSON.parse(tags || "[]");
+
+//     // 1. إنشاء المنتج في MongoDB (قبل إضافة المهمة)
+//     const product = await Product.create({
+//       title,
+//       description,
+//       price,
+//       productType,
+//       status,
+//       tags: parsedTags,
+//     });
+
+//     // --- التحسين الأهم لمشكلة OOM والربط الهش ---
+//     /* في التصميم الأصلي، كنت تعتمد على ترتيب files[] لربطها بـ variant.images.
+//        الآن، سننشئ قائمةvariants جديدة تحتوي على buffers الملفات المربوطة.
+//        سنفترض أن files[] في req.files مرتبة بنفس ترتيب صور المتغيرات في parsedVariants.
+//        (على الرغم من أن الاعتماد على الترتيب يظل هشًا، لكن هذا هو الافتراض الحالي في الكود).
+//     */
+
+//     let fileIndex = 0;
+//     const variantsWithBuffers = parsedVariants.map((variant) => {
+//       const imagesWithBuffers = [];
+
+//       // نمر على عدد الصور المتوقعة لهذا المتغير
+//       for (let i = 0; i < variant.images.length; i++) {
+//         const file = req.files[fileIndex++];
+
+//         if (file) {
+//           // نمرر فقط البيانات الضرورية لتخزينها في Redis
+//           imagesWithBuffers.push({
+//             // Buffer هو الذي يسبب OOM، لكن يجب تمريره ليتم معالجته.
+//             // الحل البديل (الأكثر أمانًا) هو تخزين الملفات مؤقتًا على القرص (DiskStorage)
+//             // وتمرير مسار الملف فقط، لكننا سنلتزم بـ MemoryStorage ونمرر الـ Buffer فقط
+//             // بعد أن قمنا بحذف أي خصائص إضافية غير ضرورية من Multer.
+//             buffer: file.buffer,
+//             originalname: file.originalname,
+//             mimetype: file.mimetype,
+//           });
+//         }
+//       }
+
+//       return {
+//         ...variant,
+//         images: imagesWithBuffers, // استبدال الـ placeholders بالـ buffers الفعلية
+//       };
+//     });
+
+//     // 2. إضافة المهمة إلى صف الانتظار (Job)
+//     // نرسل VariantsWithBuffers بدلاً من files: req.files
+//    await productQueue.add("processProduct", {
+//       productId: product._id,
+//       parsedVariants: variantsWithBuffers, // هذا يحتوي الآن على الـ Buffers
+//     });
+
+//     res.status(201).json({
+//       success: true,
+//       message:
+//         "Product created. Images & variants are processing in background.",
+//       productId: product._id,
+//     });
+//   } catch (err) {
+//     next(err);
+//   }
+// };
+
+exports.createProduct = async (req, res, next) => {
   try {
-    let variants = req.body.variants;
-    if (typeof variants === "string") {
-      try {
-        variants = JSON.parse(variants);
-      } catch {
-        return res
-          .status(400)
-          .json({ success: false, message: "Invalid variants JSON format." });
-      }
-    }
+    const {
+      title,
+      description,
+      price,
+      productType,
+      productTypeName,
+      status,
+      // colors,
+      variants,
+    } = req.body;
 
+    // parsedColors = JSON.parse(colors);
+    const parsedVariants = JSON.parse(variants || "[]");
+
+    // 1. إنشاء المنتج في MongoDB
     const product = await Product.create({
-      title: req.body.title,
-      description: req.body.description,
-      price: req.body.price,
-      productType: req.body.productType,
+      title,
+      description,
+      price,
+      productType,
+      productTypeName,
+      status,
+      // colors: parsedColors,
+    });
+    console.log("productTypeName", productTypeName);
+    // console.log("allColors", colors);
+
+    // 🔔 التحسين: ربط الملفات بمساراتها (Paths) بدلاً من الـ Buffers
+    let fileIndex = 0;
+    const variantsWithFilePaths = parsedVariants.map((variant) => {
+      const imagesWithPaths = [];
+
+      // نمر على عدد الصور المتوقعة لهذا المتغير
+      for (let i = 0; i < variant.images.length; i++) {
+        const file = req.files[fileIndex++]; // Multer DiskStorage يضيف خاصية `path`
+
+        if (file) {
+          imagesWithPaths.push({
+            // 🔔 تمرير مسار الملف فقط (String) - الحجم صغير جداً
+            path: file.path,
+            originalname: file.originalname,
+            mimetype: file.mimetype,
+          });
+        }
+      }
+
+      return {
+        ...variant,
+        images: imagesWithPaths, // يحتوي الآن على مسارات الملفات المؤقتة
+      };
     });
 
-    // Map files to variants
-    const files = req.files || [];
-    const fileMap = {};
-    files.forEach((file) => {
-      const match = file.fieldname.match(/\d+/);
-      if (!match) return;
-      const idx = match[0];
-      if (!fileMap[idx]) fileMap[idx] = [];
-      fileMap[idx].push(file);
-    });
-
-    const variantsWithFiles = variants.map((v, i) => ({
-      ...v,
-      images: (fileMap[i] || []).map((f) => ({
-        path: f.path,
-        originalname: f.originalname,
-        mimetype: f.mimetype,
-        size: f.size,
-      })),
-    }));
-
-    await productQueue.add("uploadProductImages", {
-      productId: product._id.toString(),
-      variants: variantsWithFiles,
+    // 2. إضافة المهمة إلى صف الانتظار (Job)
+    await productQueue.add("processProduct", {
+      productId: product._id,
+      parsedVariants: variantsWithFilePaths, // بيانات صغيرة (مسارات Strings)
     });
 
     res.status(201).json({
       success: true,
-      message: "✅ Product created. Images uploading in background.",
+      message:
+        "Product created. Images & variants are processing in background.",
       productId: product._id,
     });
   } catch (err) {
-    console.error("❌ Create Product Error:", err);
-    res.status(500).json({ success: false, message: err.message });
+    // 🔔 مهم: إذا حدث خطأ في المتحكم، يجب حذف الملفات المؤقتة من القرص.
+    if (req.files && req.files.length > 0) {
+      req.files.forEach((file) => {
+        // نستخدم fs.unlinkSync لأننا في block متزامن
+        try {
+          if (fs.existsSync(file.path)) {
+            fs.unlinkSync(file.path);
+          }
+        } catch (e) {
+          console.error(
+            "Failed to delete temp file during error handling:",
+            e.message
+          );
+        }
+      });
+    }
+    next(err);
   }
 };
+// const Product = require("../models/product");
+// const { productQueue } = require("../queues/product.queue");
+
+// exports.createProduct = async (req, res, next) => {
+//   try {
+//     const { title, description, price, productType, status, tags, variants } =
+//       req.body;
+
+//     const parsedVariants = JSON.parse(variants || "[]");
+//     const parsedTags = JSON.parse(tags || "[]");
+
+//     // إنشاء المنتج بدون waiting على الصور
+//     const product = await Product.create({
+//       title,
+//       description,
+//       price,
+//       productType,
+//       status,
+//       tags: parsedTags,
+//     });
+
+//     // إضافة Job للـ queue
+//     await productQueue.add("processProduct", {
+//       productId: product._id,
+//       parsedVariants,
+//       files: req.files, // multer memoryStorage buffers
+//     });
+
+//     res.status(201).json({
+//       success: true,
+//       message: "Product created. Images & variants are processing in background.",
+//       productId: product._id,
+//     });
+//   } catch (err) {
+//     next(err);
+//   }
+// };
 
 /**
  * @desc Get all products with optional filtering
@@ -232,6 +663,24 @@ exports.createProduct = async (req, res) => {
 //     .status(200)
 //     .json(new ApiResponse(200, product, "Product retrieved successfully"));
 // });
+// exports.getVariantByColor = asyncHandler(async (req, res, next) => {
+//   const { slug } = req.params;
+//   const { color } = req.query;
+
+//   const product = await Product.findOne({ slug });
+
+//   if (!product) return next(new ApiError("Product not found", 404));
+
+//   const variant = await ProductVariant.findOne({
+//     _id: { $in: product.variants },
+//     ["color.name"]: color,
+//   });
+
+//   res
+//     .status(200)
+//     .json(new ApiResponse(200, variant, "Variant retrieved successfully"));
+// });
+
 exports.getVariantByColor = asyncHandler(async (req, res, next) => {
   const { slug } = req.params;
   const { color } = req.query;
@@ -240,23 +689,77 @@ exports.getVariantByColor = asyncHandler(async (req, res, next) => {
 
   if (!product) return next(new ApiError("Product not found", 404));
 
-  const variant = await ProductVariant.findOne({
-    _id: { $in: product.variants },
-    ["color.name"]: color,
-  });
+  let variants;
+
+  if (color) {
+    // لو في color → جلب الـ variant المطابق
+    variants = await ProductVariant.find({
+      _id: { $in: product.variants },
+      "color.name": color,
+    });
+  } else {
+    // لو مفيش color → جلب كل الـ variants
+    variants = await ProductVariant.find({
+      _id: { $in: product.variants },
+    });
+  }
 
   res
     .status(200)
-    .json(new ApiResponse(200, variant, "Variant retrieved successfully"));
+    .json(new ApiResponse(200, variants, "Variants retrieved successfully"));
 });
 
+// exports.getProductInfo = asyncHandler(async (req, res, next) => {
+//   const { slug } = req.params;
+
+//   //   const product = await Product.findOne({ slug }).select(
+//   //     "title slug description price originalPrice discountType discountValue mainImage colors productTypeName rating numReviews"
+//   //   );
+//   //   // .populate("productType", "name");
+
+//   //   if (!product) return next(new ApiError("Product not found", 404));
+
+//   //   res
+//   //     .status(200)
+//   //     .json(new ApiResponse(200, product, "Product info retrieved successfully"));
+//   // });
+//   // const product = await Product.findOne({ slug }).select(
+//   //   "title slug description price originalPrice discountType discountValue mainImage colors productTypeName rating numReviews"
+//   // );
+
+//   const product = await Product.findOne({ slug }).select(
+//     "title slug description price originalPrice discountType discountValue discountStart discountEnd mainImage colors productTypeName rating numReviews"
+//   );
+
+//   if (!product) return next(new ApiError("Product not found", 404));
+
+//   // حول الـ document object to include virtuals
+//   // const productData = product.toObject({ virtuals: true });
+
+//   res
+//     .status(200)
+//     .json(new ApiResponse(200, product, "Product info retrieved successfully"));
+// });
+//
 exports.getProductInfo = asyncHandler(async (req, res, next) => {
   const { slug } = req.params;
 
-  const product = await Product.findOne({ slug }).select(
-    "title slug description price originalPrice discountType discountValue mainImage colors productTypeName rating numReviews"
-  );
-  // .populate("productType", "name");
+  //   const product = await Product.findOne({ slug }).select(
+  //     "title slug description price originalPrice discountType discountValue mainImage colors productTypeName rating numReviews"
+  //   );
+  //   // .populate("productType", "name");
+
+  //   if (!product) return next(new ApiError("Product not found", 404));
+
+  //   res
+  //     .status(200)
+  //     .json(new ApiResponse(200, product, "Product info retrieved successfully"));
+  // });
+  // const product = await Product.findOne({ slug }).select(
+  //   "title slug description price originalPrice discountType discountValue mainImage colors productTypeName rating numReviews"
+  // );
+
+  const product = await Product.findOne({ slug });
 
   if (!product) return next(new ApiError("Product not found", 404));
 
@@ -265,7 +768,6 @@ exports.getProductInfo = asyncHandler(async (req, res, next) => {
     .json(new ApiResponse(200, product, "Product info retrieved successfully"));
 });
 
-//
 exports.getQuickViewProduct = asyncHandler(async (req, res, next) => {
   const { id } = req.params;
 
@@ -326,53 +828,51 @@ exports.getQuickViewProduct = asyncHandler(async (req, res, next) => {
 
 //
 
-exports.getPriceRange = async (req, res) => {
-  try {
-    let query = {};
+/**
+ * @desc Get price range for filtered products
+ * @route GET /api/products/price-range
+ * @access Public
+ */
+exports.getPriceRange = asyncHandler(async (req, res, next) => {
+  const query = {};
 
-    // filters
-    if (req.query.type)
-      query.productTypeName = { $in: req.query.type.split(",") };
-    if (req.query.color)
-      query["colors.name"] = { $in: req.query.color.split(",") };
-    if (req.query.search)
-      query.searchableText = { $regex: req.query.search, $options: "i" };
-
-    const result = await Product.aggregate([
-      { $match: query },
-      {
-        $group: {
-          _id: null,
-          minPrice: { $min: "$price" },
-          maxPrice: { $max: "$price" },
-        },
-      },
-    ]);
-
-    res.json(result[0] || { minPrice: 0, maxPrice: 0 });
-  } catch (err) {
-    res.status(500).json({ message: err.message });
+  // Build filters
+  if (req.query.type) {
+    query.productTypeName = { $in: req.query.type.split(",") };
   }
-};
+  if (req.query.color) {
+    query["colors.name"] = { $in: req.query.color.split(",") };
+  }
+  if (req.query.search) {
+    query.searchableText = { $regex: req.query.search, $options: "i" };
+  }
+
+  const result = await Product.aggregate([
+    { $match: query },
+    {
+      $group: {
+        _id: null,
+        minPrice: { $min: "$price" },
+        maxPrice: { $max: "$price" },
+      },
+    },
+  ]);
+
+  res.json(new ApiResponse(200, result[0] || { minPrice: 0, maxPrice: 0 }));
+});
 
 //
 /**
- * @desc Update a product with variants
+ * @desc Update a product with variants (full update)
  * @route PUT /api/products/:id
  * @access Private/Admin
  */
 exports.updateProduct = asyncHandler(async (req, res, next) => {
   const { id } = req.params;
 
-  // 1️⃣ Parse variants if it's a string
-  if (req.body.variants && typeof req.body.variants === "string") {
-    try {
-      req.body.variants = JSON.parse(req.body.variants);
-    } catch (parseError) {
-      return next(
-        new ApiError("Invalid variants JSON format: " + parseError.message, 400)
-      );
-    }
+  // 1️⃣ Parse variants
+  if (req.body.variants) {
+    req.body.variants = parseVariants(req.body.variants);
   }
 
   // 2️⃣ Validate request data
@@ -389,21 +889,16 @@ exports.updateProduct = asyncHandler(async (req, res, next) => {
 
   const { variants, ...productData } = value;
 
-  // 3️⃣ Group uploaded files by fieldname (if any)
-  const filesByField =
-    req.files && req.files.length > 0 ? groupFilesByField(req.files) : {};
+  // 3️⃣ Map uploaded files to variant indices
+  const variantFilesMap = mapVariantFiles(req.files);
 
   // 4️⃣ Update product and variants using service
-  await updateProductAndVariants(id, productData, variants, filesByField);
+  await updateProductAndVariants(id, productData, variants, variantFilesMap);
 
-  // 5️⃣ Invalidate cache after updating product
+  // 5️⃣ Fetch and return the updated product
+  const updatedProduct = await fetchProductWithRelations(Product, id);
 
-  // 6️⃣ Fetch and return the updated product with populated variants
-  const populatedProduct = await Product.findById(id)
-    .populate("variants")
-    .populate("productType", "name");
-
-  if (!populatedProduct) {
+  if (!updatedProduct) {
     return next(
       new ApiError("Product was updated but could not be retrieved", 500)
     );
@@ -411,9 +906,7 @@ exports.updateProduct = asyncHandler(async (req, res, next) => {
 
   res
     .status(200)
-    .json(
-      new ApiResponse(200, populatedProduct, "Product updated successfully")
-    );
+    .json(new ApiResponse(200, updatedProduct, "Product updated successfully"));
 });
 
 /**
@@ -424,15 +917,9 @@ exports.updateProduct = asyncHandler(async (req, res, next) => {
 exports.patchProduct = asyncHandler(async (req, res, next) => {
   const { id } = req.params;
 
-  // 1️⃣ Parse variants if it's a string
-  if (req.body.variants && typeof req.body.variants === "string") {
-    try {
-      req.body.variants = JSON.parse(req.body.variants);
-    } catch (parseError) {
-      return next(
-        new ApiError("Invalid variants JSON format: " + parseError.message, 400)
-      );
-    }
+  // 1️⃣ Parse variants if provided
+  if (req.body.variants) {
+    req.body.variants = parseVariants(req.body.variants);
   }
 
   // 2️⃣ Validate request data (all fields optional for PATCH)
@@ -447,7 +934,7 @@ exports.patchProduct = asyncHandler(async (req, res, next) => {
     return next(new ApiError(`Validation error: ${errorMessages}`, 400));
   }
 
-  // 3️⃣ Check if at least one field is provided for update
+  // 3️⃣ Check if at least one field is provided
   if (Object.keys(value).length === 0) {
     return next(
       new ApiError("At least one field must be provided for update", 400)
@@ -456,21 +943,16 @@ exports.patchProduct = asyncHandler(async (req, res, next) => {
 
   const { variants, ...productData } = value;
 
-  // 4️⃣ Group uploaded files by fieldname (if any)
-  const filesByField =
-    req.files && req.files.length > 0 ? groupFilesByField(req.files) : {};
+  // 4️⃣ Map uploaded files to variant indices
+  const variantFilesMap = mapVariantFiles(req.files);
 
-  // 5️⃣ Update product and variants using service (only provided fields)
-  await updateProductAndVariants(id, productData, variants, filesByField);
+  // 5️⃣ Update product and variants using service
+  await updateProductAndVariants(id, productData, variants, variantFilesMap);
 
-  // 6️⃣ Invalidate cache after updating product
+  // 6️⃣ Fetch and return the updated product
+  const updatedProduct = await fetchProductWithRelations(Product, id);
 
-  // 7️⃣ Fetch and return the updated product with populated variants
-  const populatedProduct = await Product.findById(id)
-    .populate("variants")
-    .populate("productType", "name");
-
-  if (!populatedProduct) {
+  if (!updatedProduct) {
     return next(
       new ApiError("Product was updated but could not be retrieved", 500)
     );
@@ -478,9 +960,7 @@ exports.patchProduct = asyncHandler(async (req, res, next) => {
 
   res
     .status(200)
-    .json(
-      new ApiResponse(200, populatedProduct, "Product updated successfully")
-    );
+    .json(new ApiResponse(200, updatedProduct, "Product updated successfully"));
 });
 
 /**
@@ -499,4 +979,66 @@ exports.deleteProduct = asyncHandler(async (req, res, next) => {
   res
     .status(200)
     .json(new ApiResponse(200, null, "Product deleted successfully"));
+});
+/**
+ * @desc Get related products based on tags, attributes, and price
+ * @route GET /api/products/:slug/related
+ * @access Public
+ */
+exports.getRelatedProducts = asyncHandler(async (req, res, next) => {
+  const { slug } = req.params;
+
+  const product = await Product.findOne({ slug }).lean();
+
+  if (!product) {
+    return next(new ApiError("Product not found", 404));
+  }
+
+  const related = await Product.aggregate([
+    {
+      $match: {
+        _id: { $ne: product._id },
+        isAvailable: true,
+        status: "active",
+        productType: product.productType,
+      },
+    },
+    {
+      $addFields: {
+        tagScore: {
+          $size: {
+            $setIntersection: ["$tags", product.tags || []],
+          },
+        },
+        attrScore: {
+          $size: {
+            $setIntersection: [
+              { $map: { input: "$attributes", as: "a", in: "$$a.key" } },
+              (product.attributes || []).map((a) => a.key),
+            ],
+          },
+        },
+        priceScore: {
+          $cond: [
+            {
+              $lte: [{ $abs: { $subtract: ["$price", product.price] } }, 150],
+            },
+            1,
+            0,
+          ],
+        },
+      },
+    },
+    {
+      $addFields: {
+        finalScore: {
+          $add: ["$tagScore", "$attrScore", "$priceScore"],
+        },
+      },
+    },
+    { $sort: { finalScore: -1, rating: -1, views: -1 } },
+    { $limit: 12 },
+  ]);
+
+  res.json(new ApiResponse(200, related, "Related products retrieved"));
 });

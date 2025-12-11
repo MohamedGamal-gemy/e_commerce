@@ -40,16 +40,15 @@ exports.getProductReviews = asyncHandler(async (req, res) => {
     Review.find({ product: productId })
       .populate("user", "username avatar")
       .sort({ createdAt: -1 }),
-    Product.findById(productId).select("averageRating numReviews"),
+    Product.findById(productId).select("rating numReviews"),
   ]);
 
   res.json({
     reviews,
     numReviews: product?.numReviews || 0,
-    averageRating: product?.averageRating || 0,
+    averageRating: product?.rating || 0,
   });
 });
-
 exports.updateReview = asyncHandler(async (req, res) => {
   const { reviewId } = req.params;
   const updates = (({ rating, title, comment }) => ({

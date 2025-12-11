@@ -37,9 +37,41 @@ ReviewSchema.index({ product: 1, user: 1 }, { unique: true });
 ReviewSchema.index({ rating: -1 });
 
 // ✅ Static: حساب متوسط التقييمات وعدد الريفيوز
+// ReviewSchema.statics.getProductStats = async function (productId) {
+//   const stats = await this.aggregate([
+//     { $match: { product: mongoose.Types.ObjectId(productId) } },
+//     {
+//       $group: {
+//         _id: "$product",
+//         avgRating: { $avg: "$rating" },
+//         numReviews: { $sum: 1 },
+//       },
+//     },
+//   ]);
+//   return stats[0] || { avgRating: 0, numReviews: 0 };
+// };
+
+// ReviewSchema.methods.updateProductRating = async function () {
+//   const Product = require("./product"); // استدعاء ديناميكي لتجنب circular dependency
+//   const stats = await this.constructor.getProductStats(this.product);
+
+//   await Product.findByIdAndUpdate(this.product, {
+//     rating: stats.avgRating.toFixed(1), // ✅ نفس اسم الحقل في Product
+//     numReviews: stats.numReviews,
+//   });
+// };
+
+// // ✅ Hooks
+// ReviewSchema.post("save", function () {
+//   this.updateProductRating().catch(console.error);
+// });
+// ReviewSchema.post("findOneAndDelete", function (doc) {
+//   doc?.updateProductRating().catch(console.error);
+// });
+
 ReviewSchema.statics.getProductStats = async function (productId) {
   const stats = await this.aggregate([
-    { $match: { product: mongoose.Types.ObjectId(productId) } },
+    { $match: { product: new mongoose.Types.ObjectId(productId) } },
     {
       $group: {
         _id: "$product",
@@ -48,25 +80,40 @@ ReviewSchema.statics.getProductStats = async function (productId) {
       },
     },
   ]);
+
   return stats[0] || { avgRating: 0, numReviews: 0 };
 };
 
 ReviewSchema.methods.updateProductRating = async function () {
-  const Product = require("./product"); // استدعاء ديناميكي لتجنب circular dependency
+  const Product = require("../product");
   const stats = await this.constructor.getProductStats(this.product);
 
   await Product.findByIdAndUpdate(this.product, {
-    rating: stats.avgRating.toFixed(1), // ✅ نفس اسم الحقل في Product
+    rating: Number(stats.avgRating.toFixed(1)),
     numReviews: stats.numReviews,
   });
 };
 
-// ✅ Hooks
+// ---------------------
+//     SAVE HOOK
+// ---------------------
 ReviewSchema.post("save", function () {
   this.updateProductRating().catch(console.error);
 });
-ReviewSchema.post("findOneAndDelete", function (doc) {
-  doc?.updateProductRating().catch(console.error);
+
+// ---------------------
+//   DELETE HOOK (perfect)
+// ---------------------
+ReviewSchema.pre("findOneAndDelete", async function (next) {
+  const doc = await this.model.findOne(this.getFilter());
+  this._docToUpdate = doc;
+  next();
+});
+
+ReviewSchema.post("findOneAndDelete", function () {
+  if (this._docToUpdate) {
+    this._docToUpdate.updateProductRating().catch(console.error);
+  }
 });
 
 module.exports = mongoose.model("Review", ReviewSchema);
