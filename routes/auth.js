@@ -257,6 +257,9 @@ const { protectOptional } = require("../middleware/auth.middleware");
 router.post("/register", authController.register);
 router.post("/login", authController.login);
 router.get("/refresh", authController.refresh);
+//
+// router.post("/refresh", authController.refresh);
+//
 router.post("/logout", protectOptional, authController.logout);
 router.get("/check-auth", authController.checkAuth);
 

@@ -13,6 +13,7 @@ const sendOrderEmail = async (email, order) => {
   });
 
   const mailOptions = {
+    // from: "Your Store <onboarding@resend.dev>", // في البداية استخدم هذا الإيميل التجريبي
     from: "Your Store <onboarding@resend.dev>", // في البداية استخدم هذا الإيميل التجريبي
     to: email,
     subject: `Order Confirmed - #${order._id.toString().slice(-6)}`,

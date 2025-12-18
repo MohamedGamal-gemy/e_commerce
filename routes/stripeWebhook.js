@@ -437,65 +437,112 @@ router.post(
         // }
 
         // 📦 Update Stock and Purchases
-        for (const item of order.items) {
-          console.log(
-            "Updating stock:",
-            item.variant,
-            item.size,
-            item.quantity
-          );
+        // for (const item of order.items) {
+        //   console.log("item", item);
+        //   // console.log(
+        //   //   "Updating stock:",
+        //   //   item.variant,
+        //   //   item.size,
+        //   //   item.quantity
+        //   // );
 
+        //   if (item.variant) {
+        //     // 1️⃣ تحديث الـ Variant
+        //     const variantUpdate = await ProductVariant.updateOne(
+        //       {
+        //         _id: item.variant,
+        //         "sizes.size": item.size.toUpperCase(),
+        //         "sizes.stock": { $gte: item.quantity },
+        //       },
+        //       { $inc: { "sizes.$.stock": -item.quantity } },
+        //       { session: dbSession }
+        //     );
+
+        //     if (variantUpdate.modifiedCount === 0) {
+        //       throw new Error(`Insufficient stock for variant ${item.variant}`);
+        //     }
+
+        //     // 2️⃣ تحديث embedded colors داخل المنتج نفسه
+        //     const product = await Product.findById(item.product).session(
+        //       dbSession
+        //     );
+        //     if (product) {
+        //       const colorIndex = product.colors.findIndex(
+        //         (c) =>
+        //           c.value.toLowerCase() ===
+        //           variantUpdate.color?.value?.toLowerCase()
+        //       );
+        //       if (colorIndex !== -1) {
+        //         const sizeIndex = product.colors[colorIndex].sizes.findIndex(
+        //           (s) => s.size.toUpperCase() === item.size.toUpperCase()
+        //         );
+        //         if (sizeIndex !== -1) {
+        //           product.colors[colorIndex].sizes[sizeIndex].stock -=
+        //             item.quantity;
+        //           await product.save({ session: dbSession });
+        //         }
+        //       }
+        //     }
+        //   }
+
+        //   // 3️⃣ تحديث المبيعات و totalStock
+        //   if (item.product) {
+        //     await Product.updateOne(
+        //       { _id: item.product },
+        //       {
+        //         $inc: { purchases: item.quantity, totalStock: -item.quantity },
+        //       },
+        //       { session: dbSession }
+        //     );
+        //   }
+        // }
+
+        // ###############
+        for (const item of order.items) {
           if (item.variant) {
-            // 1️⃣ تحديث الـ Variant
-            const variantUpdate = await ProductVariant.updateOne(
+            // 1️⃣ تحديث الـ Variant (المصدر الرئيسي للمخزون)
+            const variantUpdate = await ProductVariant.findOneAndUpdate(
               {
                 _id: item.variant,
                 "sizes.size": item.size.toUpperCase(),
                 "sizes.stock": { $gte: item.quantity },
               },
               { $inc: { "sizes.$.stock": -item.quantity } },
-              { session: dbSession }
+              { session: dbSession, new: true } // نطلب الوثيقة الجديدة لنحصل على قيمة اللون
             );
 
-            if (variantUpdate.modifiedCount === 0) {
-              throw new Error(`Insufficient stock for variant ${item.variant}`);
-            }
-
-            // 2️⃣ تحديث embedded colors داخل المنتج نفسه
-            const product = await Product.findById(item.product).session(
-              dbSession
-            );
-            if (product) {
-              const colorIndex = product.colors.findIndex(
-                (c) =>
-                  c.value.toLowerCase() ===
-                  variantUpdate.color?.value?.toLowerCase()
+            if (!variantUpdate) {
+              throw new Error(
+                `Insufficient stock or variant not found: ${item.variant}`
               );
-              if (colorIndex !== -1) {
-                const sizeIndex = product.colors[colorIndex].sizes.findIndex(
-                  (s) => s.size.toUpperCase() === item.size.toUpperCase()
-                );
-                if (sizeIndex !== -1) {
-                  product.colors[colorIndex].sizes[sizeIndex].stock -=
-                    item.quantity;
-                  await product.save({ session: dbSession });
-                }
-              }
             }
-          }
 
-          // 3️⃣ تحديث المبيعات و totalStock
-          if (item.product) {
+            // 2️⃣ تحديث الـ Embedded Color داخل الـ Product (بضغطة واحدة)
+            // نستخدم الـ Array Filters لتحديد المقاس واللون بدقة داخل المصفوفة المتداخلة
             await Product.updateOne(
-              { _id: item.product },
               {
-                $inc: { purchases: item.quantity, totalStock: -item.quantity },
+                _id: item.product,
               },
-              { session: dbSession }
+              {
+                $inc: {
+                  "colors.$[colorNode].sizes.$[sizeNode].stock": -item.quantity,
+                  totalStock: -item.quantity,
+                  purchases: item.quantity,
+                },
+              },
+              {
+                arrayFilters: [
+                  {
+                    "colorNode.value": variantUpdate.color.value.toLowerCase(),
+                  },
+                  { "sizeNode.size": item.size.toUpperCase() },
+                ],
+                session: dbSession,
+              }
             );
           }
         }
-
+        // ###############
         // ✨ Clear User's Cart
         await Cart.findOneAndUpdate(
           { user: order.user },
