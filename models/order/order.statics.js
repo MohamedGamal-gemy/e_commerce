@@ -1,5 +1,4 @@
 module.exports = (schema) => {
-  // 🔍 إحصائيات الطلبات
   schema.statics.getStats = async function () {
     return await this.aggregate([
       {
@@ -7,16 +6,15 @@ module.exports = (schema) => {
           _id: "$status",
           totalOrders: { $sum: 1 },
           totalRevenue: { $sum: "$totalPrice" },
+          averageOrderValue: { $avg: "$totalPrice" }, // إحصائية إضافية مفيدة
         },
       },
     ]);
   };
 
-  // 🔍 جلب كل الطلبات الخاصة بمستخدم
   schema.statics.getUserOrders = async function (userId) {
     return await this.find({ user: userId })
-      .populate("items.product")
-      .populate("items.variant")
+      .select("-stripeSessionId -__v") // تقليل حجم الداتا الراجعة
       .sort({ createdAt: -1 });
   };
 };

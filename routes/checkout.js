@@ -8,174 +8,448 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 const Cart = require("../models/cart");
 const User = require("../models/user");
 const GuestCart = require("../models/guestCart");
-const Order = require("../models/order");
+const Order = require("../models/order/order.schema");
 const ProductVariant = require("../models/productVariant");
 const { protect } = require("../middlewares/protect");
+
+// router.post(
+//   "/create-order",
+//   protect,
+//   asyncHandler(async (req, res) => {
+//     try {
+//       const { billingDetails, shipping = 50, discount = 0 } = req.body;
+//       const userId = req.user && (req.user.id || req.user._id?.toString());
+//       const sessionId =
+//         req.cookies?.sessionId || req.headers["x-session-id"] || null;
+
+//       if (
+//         !billingDetails ||
+//         !billingDetails.fullName ||
+//         !billingDetails.email ||
+//         !billingDetails.phone ||
+//         !billingDetails.address
+//       ) {
+//         return res
+//           .status(400)
+//           .json({ error: "Billing details are incomplete" });
+//       }
+
+//       // 🛡️ إجبار تسجيل الدخول للـ checkout (مفروض عبر protect)
+//       if (!userId) {
+//         return res.status(401).json({
+//           code: "NEED_AUTH",
+//           message: "Authentication required for checkout",
+//         });
+//       }
+
+//       // 🔀 دمج سلة الضيف (إن وُجدت) إلى سلة المستخدم
+//       if (sessionId) {
+//         const guest = await GuestCart.findOne({ sessionId, isActive: true });
+//         if (guest && Array.isArray(guest.items) && guest.items.length) {
+//           for (const it of guest.items) {
+//             await Cart.addItem(userId, {
+//               product: it.product,
+//               variant: it.variant,
+//               size: it.size,
+//               color: it.color,
+//               quantity: it.quantity,
+//               price: it.price,
+//             });
+//           }
+//           // نظّف سلة الضيف بعد الدمج
+//           await GuestCart.findOneAndUpdate(
+//             { sessionId },
+//             { items: [], totalItems: 0, totalPrice: 0 }
+//           );
+//         }
+//       }
+
+//       // 🛒 جلب سلة المستخدم بعد الدمج (إن وُجد)
+//       const cart = await Cart.findOne({ user: userId, isActive: true })
+//         .populate({ path: "items.product", select: "title price slug" })
+//         .populate({ path: "items.variant", select: "color images" });
+
+//       if (!cart || !cart.items.length) {
+//         return res.status(400).json({ error: "Cart is empty or not found" });
+//       }
+
+//       // إجمالي السعر
+//       const subtotal = cart.items.reduce(
+//         (acc, item) => acc + (item.price || 0) * (item.quantity || 0),
+//         0
+//       );
+//       const total = subtotal + shipping - discount;
+
+//       // تجهيز عناصر الطلب (snapshot وقت الشراء)
+//       const orderItems = cart.items.map((item) => {
+//         const image =
+//           Array.isArray(item.variant?.images) && item.variant.images.length
+//             ? item.variant.images[0].url || item.variant.images[0]
+//             : "";
+//         return {
+//           product: item.product._id,
+//           variant: item.variant._id,
+//           size: item.size,
+//           color: item.variant?.color || undefined,
+//           quantity: item.quantity,
+//           price: item.price,
+//           productSnapshot: {
+//             title: item.product.title,
+//             image,
+//             color: item.variant?.color || undefined,
+//           },
+//         };
+//       });
+
+//       // إنشاء order أولاً (status pending)
+//       const order = new Order({
+//         user: userId,
+//         sessionId: userId ? null : sessionId,
+//         items: orderItems,
+//         subtotal,
+//         shippingPrice: shipping,
+//         discount,
+//         totalPrice: total,
+//         billingDetails,
+//         payment: { method: "card", status: "pending" },
+//         status: "pending",
+//       });
+
+//       await order.save();
+
+//       // إعداد عناصر Stripe
+//       const line_items = orderItems.map((item) => ({
+//         price_data: {
+//           currency: "egp",
+//           product_data: {
+//             name: item.productSnapshot?.title || "Unknown Product",
+//             description: `Size: ${item.size}`,
+//             images: item.productSnapshot?.image
+//               ? [item.productSnapshot.image]
+//               : [],
+//           },
+//           unit_amount: Math.round(item.price * 100),
+//         },
+//         quantity: item.quantity,
+//       }));
+
+//       // إنشاء Stripe session وربطها بالـ order
+//       const session = await stripe.checkout.sessions.create({
+//         payment_method_types: ["card"],
+//         line_items,
+//         mode: "payment",
+//         success_url: `${process.env.CLIENT_URL}/checkout/success?orderId=${order._id}`,
+//         cancel_url: `${process.env.CLIENT_URL}/checkout/cancel`,
+//         metadata: { orderId: order._id.toString() },
+//       });
+
+//       // حفظ stripeSessionId جوه الطلب
+//       order.stripeSessionId = session.id;
+//       await order.save();
+
+//       res.json({ url: session.url });
+//     } catch (error) {
+//       console.error("❌ Error creating order:", error);
+//       res.status(500).json({ error: "Failed to create order" });
+//     }
+//   })
+// );
+
+//
+// router.post(
+//   "/create-order",
+//   protect,
+//   asyncHandler(async (req, res) => {
+//     const {
+//       billingDetails,
+//       shipping = 50,
+//       discount = 0,
+//       shippingAddress,
+//     } = req.body;
+//     const userId = req.user.id || req.user._id;
+//     const sessionId = req.cookies?.sessionId || req.headers["x-session-id"];
+
+//     // 1. التحقق من البيانات الأساسية
+//     if (
+//       !billingDetails?.fullName ||
+//       !billingDetails?.phone ||
+//       !billingDetails?.address
+//     ) {
+//       return res.status(400).json({ error: "بيانات الفواتير غير مكتملة" });
+//     }
+
+//     // 2. دمج سلة الضيف تلقائياً في سلة المستخدم المسجل (Logic احترافي)
+//     if (sessionId) {
+//       const guestCart = await GuestCart.findOne({ sessionId, isActive: true });
+//       if (guestCart?.items?.length) {
+//         for (const item of guestCart.items) {
+//           await Cart.addItem(userId, item);
+//         }
+//         await GuestCart.deleteOne({ sessionId }); // تنظيف السلة المؤقتة
+//       }
+//     }
+
+//     // 3. جلب سلة المستخدم النهائية
+//     const cart = await Cart.findOne({ user: userId, isActive: true })
+//       .populate({ path: "items.product", select: "title price slug" })
+//       .populate({ path: "items.variant", select: "color images" });
+
+//     if (!cart || !cart.items.length) {
+//       return res
+//         .status(400)
+//         .json({ error: "السلة فارغة، لا يمكن إتمام الطلب" });
+//     }
+
+//     // 4. تجهيز الـ Order Items مع عمل Snapshot كامل
+//     const orderItems = cart.items.map((item) => {
+//       const variantColor = item.variant?.color || {}; // ضمان أنه Object
+//       const mainImg = item.variant?.images?.[0]?.url || "";
+
+//       return {
+//         product: item.product._id,
+//         variant: item.variant._id,
+//         size: item.size,
+//         color: {
+//           name: variantColor.name || "",
+//           value: variantColor.value || "",
+//         },
+//         quantity: item.quantity,
+//         price: item.product.price, // السعر الحالي من الداتابيز وليس السلة
+//         productSnapshot: {
+//           title: item.product.title,
+//           image: mainImg,
+//           colorName: variantColor.name || "",
+//           colorValue: variantColor.value || "",
+//         },
+//       };
+//     });
+
+//     // 5. إنشاء الطلب (الـ Hooks ستتكفل بحساب المبالغ ورقم الطلب ORD-XXX)
+//     const order = new Order({
+//       user: userId,
+//       items: orderItems,
+//       shippingPrice: shipping,
+//       discount: discount,
+//       billingDetails,
+//       shippingAddress: shippingAddress || {}, // إضافة تفاصيل الشحن لو وجدت
+//       payment: { method: "card", status: "pending" },
+//       status: "pending",
+//     });
+
+//     await order.save();
+
+//     // 6. تجهيز Stripe Session
+//     const line_items = orderItems.map((item) => ({
+//       price_data: {
+//         currency: "egp",
+//         product_data: {
+//           name: item.productSnapshot.title,
+//           description: `المقاس: ${item.size} - اللون: ${item.productSnapshot.colorName}`,
+//           images: [item.productSnapshot.image],
+//         },
+//         unit_amount: Math.round(item.price * 100),
+//       },
+//       quantity: item.quantity,
+//     }));
+
+//     const session = await stripe.checkout.sessions.create({
+//       payment_method_types: ["card"],
+//       line_items,
+//       mode: "payment",
+//       success_url: `${process.env.CLIENT_URL}/checkout/success?orderId=${order._id}`,
+//       cancel_url: `${process.env.CLIENT_URL}/checkout/cancel`,
+//       metadata: { orderId: order._id.toString() },
+//     });
+
+//     order.stripeSessionId = session.id;
+//     await order.save();
+
+//     res.json({ url: session.url, orderNumber: order.orderNumber });
+//   })
+// );
 
 router.post(
   "/create-order",
   protect,
   asyncHandler(async (req, res) => {
-    try {
-      const { billingDetails, shipping = 50, discount = 0 } = req.body;
-      const userId = req.user && (req.user.id || req.user._id?.toString());
-      const sessionId =
-        req.cookies?.sessionId || req.headers["x-session-id"] || null;
+    const {
+      billingDetails,
+      shipping = 50,
+      discount = 0,
+      shippingAddress,
+    } = req.body;
 
-      if (
-        !billingDetails ||
-        !billingDetails.fullName ||
-        !billingDetails.email ||
-        !billingDetails.phone ||
-        !billingDetails.address
-      ) {
-        return res
-          .status(400)
-          .json({ error: "Billing details are incomplete" });
-      }
+    const userId = req.user.id || req.user._id;
+    const sessionId = req.cookies?.sessionId || req.headers["x-session-id"];
 
-      // 🛡️ إجبار تسجيل الدخول للـ checkout (مفروض عبر protect)
-      if (!userId) {
-        return res.status(401).json({
-          code: "NEED_AUTH",
-          message: "Authentication required for checkout",
-        });
-      }
+    // 1. Validation (English Messages)
+    if (
+      !billingDetails?.fullName ||
+      !billingDetails?.phone ||
+      !billingDetails?.address
+    ) {
+      return res.status(400).json({
+        error:
+          "Incomplete billing details. Please provide name, phone, and address.",
+      });
+    }
 
-      // 🔀 دمج سلة الضيف (إن وُجدت) إلى سلة المستخدم
-      if (sessionId) {
-        const guest = await GuestCart.findOne({ sessionId, isActive: true });
-        if (guest && Array.isArray(guest.items) && guest.items.length) {
-          for (const it of guest.items) {
-            await Cart.addItem(userId, {
-              product: it.product,
-              variant: it.variant,
-              size: it.size,
-              color: it.color,
-              quantity: it.quantity,
-              price: it.price,
-            });
-          }
-          // نظّف سلة الضيف بعد الدمج
-          await GuestCart.findOneAndUpdate(
-            { sessionId },
-            { items: [], totalItems: 0, totalPrice: 0 }
-          );
+    // 2. Merge Guest Cart (Professional Logic)
+    if (sessionId) {
+      const guestCart = await GuestCart.findOne({ sessionId, isActive: true });
+      if (guestCart?.items?.length) {
+        for (const item of guestCart.items) {
+          await Cart.addItem(userId, item);
         }
+        await GuestCart.deleteOne({ sessionId });
       }
+    }
 
-      // 🛒 جلب سلة المستخدم بعد الدمج (إن وُجد)
-      const cart = await Cart.findOne({ user: userId, isActive: true })
-        .populate({ path: "items.product", select: "title price slug" })
-        .populate({ path: "items.variant", select: "color images" });
+    // 3. Fetch User Cart
+    const cart = await Cart.findOne({ user: userId, isActive: true })
+      .populate({ path: "items.product", select: "title price slug" })
+      .populate({ path: "items.variant", select: "color images" });
 
-      if (!cart || !cart.items.length) {
-        return res.status(400).json({ error: "Cart is empty or not found" });
-      }
+    if (!cart || !cart.items.length) {
+      return res
+        .status(400)
+        .json({ error: "Your cart is empty. Cannot proceed to checkout." });
+    }
 
-      // إجمالي السعر
-      const subtotal = cart.items.reduce(
-        (acc, item) => acc + (item.price || 0) * (item.quantity || 0),
-        0
-      );
-      const total = subtotal + shipping - discount;
+    // 4. Prepare Order Items with Snapshot
+    const orderItems = cart.items.map((item) => {
+      const variantColor = item.variant?.color || {};
+      const mainImg = item.variant?.images?.[0]?.url || "";
 
-      // تجهيز عناصر الطلب (snapshot وقت الشراء)
-      const orderItems = cart.items.map((item) => {
-        const image =
-          Array.isArray(item.variant?.images) && item.variant.images.length
-            ? item.variant.images[0].url || item.variant.images[0]
-            : "";
-        return {
-          product: item.product._id,
-          variant: item.variant._id,
-          size: item.size,
-          color: item.variant?.color || undefined,
-          quantity: item.quantity,
-          price: item.price,
-          productSnapshot: {
-            title: item.product.title,
-            image,
-            color: item.variant?.color || undefined,
-          },
-        };
-      });
+      return {
+        product: item.product._id,
+        variant: item.variant._id,
+        size: item.size,
+        color: {
+          name: variantColor.name || "",
+          value: variantColor.value || "",
+        },
+        quantity: item.quantity,
+        price: item.product.price, // Live price from DB
+        productSnapshot: {
+          title: item.product.title,
+          image: mainImg,
+          colorName: variantColor.name || "",
+          colorValue: variantColor.value || "",
+        },
+      };
+    });
 
-      // إنشاء order أولاً (status pending)
-      const order = new Order({
-        user: userId,
-        sessionId: userId ? null : sessionId,
-        items: orderItems,
-        subtotal,
-        shippingPrice: shipping,
-        discount,
-        totalPrice: total,
-        billingDetails,
-        payment: { method: "card", status: "pending" },
-        status: "pending",
-      });
+    // 5. Create Order
+    const order = new Order({
+      user: userId,
+      items: orderItems,
+      shippingPrice: shipping,
+      discount: discount,
+      billingDetails,
+      shippingAddress: shippingAddress || {},
+      payment: { method: "card", status: "pending" },
+      status: "pending",
+    });
 
-      await order.save();
+    await order.save();
 
-      // إعداد عناصر Stripe
-      const line_items = orderItems.map((item) => ({
+    // 6. Prepare Stripe Session (English Descriptions)
+    const line_items = orderItems.map((item) => ({
+      price_data: {
+        currency: "egp",
+        product_data: {
+          name: item.productSnapshot.title,
+          description: `Size: ${item.size} - Color: ${item.productSnapshot.colorName}`,
+          images: item.productSnapshot.image
+            ? [item.productSnapshot.image]
+            : [],
+        },
+        unit_amount: Math.round(item.price * 100), // Stripe handles amounts in cents/piastres
+      },
+      quantity: item.quantity,
+    }));
+
+    // Optional: Add shipping as a separate line item if you want it visible in Stripe
+    if (shipping > 0) {
+      line_items.push({
         price_data: {
           currency: "egp",
           product_data: {
-            name: item.productSnapshot?.title || "Unknown Product",
-            description: `Size: ${item.size}`,
-            images: item.productSnapshot?.image
-              ? [item.productSnapshot.image]
-              : [],
+            name: "Shipping Fees",
           },
-          unit_amount: Math.round(item.price * 100),
+          unit_amount: Math.round(shipping * 100),
         },
-        quantity: item.quantity,
-      }));
-
-      // إنشاء Stripe session وربطها بالـ order
-      const session = await stripe.checkout.sessions.create({
-        payment_method_types: ["card"],
-        line_items,
-        mode: "payment",
-        success_url: `${process.env.CLIENT_URL}/checkout/success?orderId=${order._id}`,
-        cancel_url: `${process.env.CLIENT_URL}/checkout/cancel`,
-        metadata: { orderId: order._id.toString() },
+        quantity: 1,
       });
-
-      // حفظ stripeSessionId جوه الطلب
-      order.stripeSessionId = session.id;
-      await order.save();
-
-      res.json({ url: session.url });
-    } catch (error) {
-      console.error("❌ Error creating order:", error);
-      res.status(500).json({ error: "Failed to create order" });
     }
-  })
-);
 
-//
-router.post("/confirm", async (req, res) => {
-  try {
-    const { orderId } = req.body;
+    const session = await stripe.checkout.sessions.create({
+      payment_method_types: ["card"],
+      line_items,
+      mode: "payment",
+      customer_email: req.user.email, // Best practice for auto-filling Stripe field
+      success_url: `${process.env.CLIENT_URL}/checkout/success?orderId=${order._id}`,
+      cancel_url: `${process.env.CLIENT_URL}/checkout/cancel`,
+      metadata: { orderId: order._id.toString() },
+    });
 
-    const order = await Order.findById(orderId);
-    if (!order) return res.status(404).json({ message: "Order not found" });
-
-    // ✅ تحديث حالة الطلب
-    order.status = "paid";
+    order.stripeSessionId = session.id;
     await order.save();
 
-    // 🧹 حذف الكارت (اختياري بعد الدفع)
-    await Cart.deleteOne({ sessionId: order.sessionId });
+    // 7. Clear or Deactivate Cart after session creation
+    // Important: Usually we keep the cart until the payment is CONFIRMED via webhook
+    // but we can mark it as "processing" here if your logic requires.
 
-    res.json({ success: true, message: "Order confirmed successfully" });
-  } catch (err) {
-    console.error("❌ Error confirming order:", err.message);
-    res.status(500).json({ message: "Internal server error" });
-  }
-});
+    res.json({ url: session.url, orderNumber: order.orderNumber });
+  })
+);
+//
+// جلب بيانات طلب معين بواسطة الـ ID
+router.get(
+  "/:id",
+  protect,
+  asyncHandler(async (req, res) => {
+    // 1. البحث عن الطلب في قاعدة البيانات
+    const order = await Order.findById(req.params.id);
+
+    // 2. التحقق من وجود الطلب
+    if (!order) {
+      return res.status(404).json({ message: "Order not found" });
+    }
+
+    // 3. التحقق من أن الطلب يخص المستخدم المسجل حالياً (أمان إضافي)
+    if (order.user.toString() !== req.user.id.toString()) {
+      return res
+        .status(403)
+        .json({ message: "Not authorized to view this order" });
+    }
+
+    // 4. إرسال بيانات الطلب (هذا هو الـ JSON الذي يحتاجه الفرونت إند)
+    res.json(order);
+  })
+);
+//
+// router.post("/confirm", async (req, res) => {
+//   try {
+//     const { orderId } = req.body;
+
+//     const order = await Order.findById(orderId);
+//     if (!order) return res.status(404).json({ message: "Order not found" });
+
+//     // ✅ تحديث حالة الطلب
+//     order.status = "paid";
+//     await order.save();
+
+//     // 🧹 حذف الكارت (اختياري بعد الدفع)
+//     await Cart.deleteOne({ sessionId: order.sessionId });
+
+//     res.json({ success: true, message: "Order confirmed successfully" });
+//   } catch (err) {
+//     console.error("❌ Error confirming order:", err.message);
+//     res.status(500).json({ message: "Internal server error" });
+//   }
+// });
 //
 // 🧾 Get Orders by sessionId or userId
 router.get("/get-orders", async (req, res) => {
@@ -219,111 +493,218 @@ router.get("/get-orders", async (req, res) => {
   }
 });
 // GET /api/checkout/admin/orders
+// router.get("/admin/orders", async (req, res) => {
+//   try {
+//     const {
+//       search,
+//       status,
+//       from,
+//       to,
+//       minTotal,
+//       maxTotal,
+//       page = 1,
+//       limit = 10,
+//     } = req.query;
+
+//     const filter = {};
+//     const pageNum = Math.max(1, Number(page) || 1);
+//     const limitNum = Math.min(100, Math.max(1, Number(limit) || 10));
+//     const skip = (pageNum - 1) * limitNum;
+
+//     // Dates
+//     if (from || to) {
+//       filter.createdAt = {};
+//       if (from) filter.createdAt.$gte = new Date(from);
+//       if (to) {
+//         const toDate = new Date(to);
+//         toDate.setHours(23, 59, 59, 999);
+//         filter.createdAt.$lte = toDate;
+//       }
+//     }
+
+//     // Totals
+//     const minT = Number(minTotal);
+//     const maxT = Number(maxTotal);
+//     if (!Number.isNaN(minT) || !Number.isNaN(maxT)) {
+//       filter.totalPrice = {};
+//       if (!Number.isNaN(minT)) filter.totalPrice.$gte = minT;
+//       if (!Number.isNaN(maxT)) filter.totalPrice.$lte = maxT;
+//     }
+
+//     // Status
+//     if (status && status !== "all") filter.status = status;
+
+//     // Search (billingDetails + _id + user.name/email)
+//     if (search) {
+//       const regex = new RegExp(String(search), "i");
+//       const or = [
+//         { "billingDetails.fullName": regex },
+//         { "billingDetails.email": regex },
+//       ];
+//       if (typeof search === "string" && search.length === 24) {
+//         or.push({ _id: search });
+//       }
+
+//       // Find users matching search to include in OR
+//       const users = await User.find(
+//         { $or: [{ name: regex }, { email: regex }] },
+//         { _id: 1 }
+//       ).lean();
+//       if (users.length) {
+//         or.push({ user: { $in: users.map((u) => u._id) } });
+//       }
+
+//       filter.$or = or;
+//     }
+
+//     const [orders, totalOrders] = await Promise.all([
+//       Order.find(filter)
+//         .populate({ path: "user", select: "name email" })
+//         .populate({ path: "items.product", select: "title price" })
+//         .populate({
+//           path: "items.variant",
+//           select: "color images",
+//           // transform: (doc) => {
+//           //   if (!doc) return doc;
+//           //   const o = doc.toObject();
+//           //   return { ...o, images: o.images?.length ? [o.images[0]] : [] };
+//           // },
+//           transform: (doc) => {
+//             if (!doc) return doc;
+//             return {
+//               ...doc,
+//               images: doc.images?.length ? [doc.images[0]] : [],
+//             };
+//           },
+//         })
+//         .sort({ createdAt: -1 })
+//         .skip(skip)
+//         .limit(limitNum)
+//         .lean(),
+//       Order.countDocuments(filter),
+//     ]);
+
+//     const totalPages = Math.ceil(totalOrders / limitNum);
+
+//     res.json({
+//       orders,
+//       totalOrders,
+//       totalPages,
+//       currentPage: pageNum,
+//     });
+//   } catch (error) {
+//     console.error("❌ Error fetching admin orders:", error);
+//     res.status(500).json({ error: "Failed to fetch admin orders" });
+//   }
+// });
+//
+
 router.get("/admin/orders", async (req, res) => {
   try {
-    const {
-      search,
-      status,
-      from,
-      to,
-      minTotal,
-      maxTotal,
-      page = 1,
-      limit = 10,
-    } = req.query;
-
+    const { search, status, page = 1, limit = 10 } = req.query;
     const filter = {};
-    const pageNum = Math.max(1, Number(page) || 1);
-    const limitNum = Math.min(100, Math.max(1, Number(limit) || 10));
-    const skip = (pageNum - 1) * limitNum;
+    const pageNum = Math.max(1, Number(page));
+    const limitNum = Number(limit);
 
-    // Dates
-    if (from || to) {
-      filter.createdAt = {};
-      if (from) filter.createdAt.$gte = new Date(from);
-      if (to) {
-        const toDate = new Date(to);
-        toDate.setHours(23, 59, 59, 999);
-        filter.createdAt.$lte = toDate;
-      }
-    }
-
-    // Totals
-    const minT = Number(minTotal);
-    const maxT = Number(maxTotal);
-    if (!Number.isNaN(minT) || !Number.isNaN(maxT)) {
-      filter.totalPrice = {};
-      if (!Number.isNaN(minT)) filter.totalPrice.$gte = minT;
-      if (!Number.isNaN(maxT)) filter.totalPrice.$lte = maxT;
-    }
-
-    // Status
     if (status && status !== "all") filter.status = status;
 
-    // Search (billingDetails + _id + user.name/email)
     if (search) {
       const regex = new RegExp(String(search), "i");
-      const or = [
+      filter.$or = [
+        { orderNumber: regex }, // البحث برقم الطلب ORD-XXX
         { "billingDetails.fullName": regex },
+        { "billingDetails.phone": regex },
         { "billingDetails.email": regex },
       ];
-      if (typeof search === "string" && search.length === 24) {
-        or.push({ _id: search });
-      }
-
-      // Find users matching search to include in OR
-      const users = await User.find(
-        { $or: [{ name: regex }, { email: regex }] },
-        { _id: 1 }
-      ).lean();
-      if (users.length) {
-        or.push({ user: { $in: users.map((u) => u._id) } });
-      }
-
-      filter.$or = or;
     }
 
     const [orders, totalOrders] = await Promise.all([
       Order.find(filter)
-        .populate({ path: "user", select: "name email" })
-        .populate({ path: "items.product", select: "title price" })
-        .populate({
-          path: "items.variant",
-          select: "color images",
-          // transform: (doc) => {
-          //   if (!doc) return doc;
-          //   const o = doc.toObject();
-          //   return { ...o, images: o.images?.length ? [o.images[0]] : [] };
-          // },
-          transform: (doc) => {
-            if (!doc) return doc;
-            return {
-              ...doc,
-              images: doc.images?.length ? [doc.images[0]] : [],
-            };
-          },
-        })
+        .populate("user", "name email")
         .sort({ createdAt: -1 })
-        .skip(skip)
+        .skip((pageNum - 1) * limitNum)
         .limit(limitNum)
         .lean(),
       Order.countDocuments(filter),
     ]);
 
-    const totalPages = Math.ceil(totalOrders / limitNum);
-
     res.json({
       orders,
       totalOrders,
-      totalPages,
+      totalPages: Math.ceil(totalOrders / limitNum),
       currentPage: pageNum,
     });
   } catch (error) {
-    console.error("❌ Error fetching admin orders:", error);
-    res.status(500).json({ error: "Failed to fetch admin orders" });
+    res.status(500).json({ error: "فشل جلب الطلبات" });
   }
 });
 //
+router.get(
+  "/admin/order-stats",
+  // protect,
+  // admin,
+  asyncHandler(async (req, res) => {
+    // 1. إحصائيات عامة
+    const stats = await Order.aggregate([
+      {
+        $group: {
+          _id: null,
+          totalRevenue: { $sum: "$totalPrice" },
+          totalOrders: { $sum: 1 },
+          pendingShipment: {
+            $sum: { $cond: [{ $eq: ["$status", "paid"] }, 1, 0] },
+          },
+        },
+      },
+    ]);
+
+    // 2. مبيعات آخر 7 أيام (للـ Chart)
+    const sevenDaysAgo = new Date();
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+
+    const dailySales = await Order.aggregate([
+      {
+        $match: {
+          createdAt: { $gte: sevenDaysAgo },
+          status: { $ne: "cancelled" },
+        },
+      },
+      {
+        $group: {
+          _id: { $dateToString: { format: "%Y-%m-%d", date: "$createdAt" } },
+          sales: { $sum: "$totalPrice" },
+          count: { $sum: 1 },
+        },
+      },
+      { $sort: { _id: 1 } },
+    ]);
+
+    // 3. أفضل المنتجات مبيعاً (بناءً على الـ Snapshots)
+    const topProducts = await Order.aggregate([
+      { $unwind: "$items" },
+      {
+        $group: {
+          _id: "$items.product",
+          title: { $first: "$items.productSnapshot.title" },
+          totalSold: { $sum: "$items.quantity" },
+          revenue: { $sum: { $multiply: ["$items.price", "$items.quantity"] } },
+        },
+      },
+      { $sort: { totalSold: -1 } },
+      { $limit: 5 },
+    ]);
+
+    res.json({
+      summary: stats[0] || {
+        totalRevenue: 0,
+        totalOrders: 0,
+        pendingShipment: 0,
+      },
+      dailySales,
+      topProducts,
+    });
+  })
+);
 // update status
 router.patch("/orders/:id/status", async (req, res) => {
   try {

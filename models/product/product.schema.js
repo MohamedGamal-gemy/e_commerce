@@ -1,3 +1,4 @@
+const { string } = require("joi");
 const mongoose = require("mongoose");
 
 const ProductSchema = new mongoose.Schema(
@@ -31,7 +32,19 @@ const ProductSchema = new mongoose.Schema(
     },
     productTypeName: { type: String, index: true },
     mainImage: String,
-    colors: [{ name: String, value: String, image: String }],
+    colors: [
+      {
+        name: String,
+        value: String,
+        image: String,
+        sizes: [
+          {
+            size: { type: String },
+            stock: { type: Number },
+          },
+        ],
+      },
+    ],
 
     // Variants
     variants: [{ type: mongoose.Schema.Types.ObjectId, ref: "ProductVariant" }],

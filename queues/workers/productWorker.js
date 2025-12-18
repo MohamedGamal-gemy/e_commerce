@@ -8,7 +8,6 @@ const fs = require("fs").promises;
 
 connectToDB();
 
-// Helper: upload buffer to Cloudinary
 const uploadBufferToCloudinary = (fileBuffer) => {
   return new Promise((resolve, reject) => {
     const stream = cloudinary.uploader.upload_stream(
@@ -22,115 +21,237 @@ const uploadBufferToCloudinary = (fileBuffer) => {
   });
 };
 
+const deleteFromCloudinary = async (publicId) => {
+  try {
+    await cloudinary.uploader.destroy(publicId);
+  } catch (err) {
+    console.error("Cloudinary delete failed:", err.message);
+  }
+};
+
+async function handleMultipleProductsDeletion(data) {
+  const productIds = data.productIds || [data.productId].filter(Boolean);
+
+  console.log(`⚙ Worker started deletion for ${productIds.length} product(s).`);
+
+  let totalImagesDeleted = 0;
+  let successfulDeletions = [];
+  let failedDeletions = [];
+
+  const allVariants = await ProductVariant.find({
+    productId: { $in: productIds },
+  });
+
+  let publicIdsToDelete = [];
+  allVariants.forEach((variant) => {
+    variant.images.forEach((image) => {
+      if (image.publicId) {
+        publicIdsToDelete.push(image.publicId);
+      }
+    });
+  });
+
+  const variantResult = await ProductVariant.deleteMany({
+    productId: { $in: productIds },
+  });
+
+  if (publicIdsToDelete.length > 0) {
+    console.log(
+      `⏳ Deleting ${publicIdsToDelete.length} images from Cloudinary...`
+    );
+
+    const deletionPromises = publicIdsToDelete.map((publicId) =>
+      deleteFromCloudinary(publicId)
+        .then(() => successfulDeletions.push(publicId))
+        .catch(() => failedDeletions.push(publicId))
+    );
+
+    await Promise.allSettled(deletionPromises);
+    totalImagesDeleted = successfulDeletions.length;
+
+    console.log(
+      `✅ Cloudinary assets deleted: ${totalImagesDeleted} successful, ${failedDeletions.length} failed.`
+    );
+  }
+
+  console.log(
+    `✅ Deletion finished. Variants cleaned: ${variantResult.deletedCount}`
+  );
+  return {
+    productsCount: productIds.length,
+    imagesDeleted: totalImagesDeleted,
+    failedImagesCount: failedDeletions.length,
+  };
+}
 new Worker(
-  "productAdd",
+  "productProcessor",
   async (job) => {
-    const { productId, parsedVariants } = job.data;
-
-    console.log(`⚙ Worker started for product: ${productId}`);
-
-    const allColors = [];
+    if (
+      job.name === "deleteProductJob" ||
+      job.name === "deleteMultipleProductsJob"
+    ) {
+      return handleMultipleProductsDeletion(job.data);
+    }
+    const { productId, variants, isUpdate } = job.data;
+    console.log(
+      `⚙ Worker started for product: ${productId}. Is Update: ${isUpdate}`
+    );
 
     const variantIds = [];
+    const allColors = [];
 
     try {
-      // Process each variant
-      for (const variant of parsedVariants) {
-        // 1. معالجة الصور (قراءة من القرص ثم رفع إلى Cloudinary بالتوازي)
-        const uploadPromises = variant.images.map(async (imageObj) => {
-          let uploaded = null;
+      for (const v of variants) {
+        let finalImages = v.oldImages || [];
 
+        const uploadPromises = (v.newImages || []).map(async (img) => {
+          if (!img.path) return null;
+
+          const buffer = await fs.readFile(img.path);
           try {
-            // 🔔 التحسين: قراءة الـ Buffer من المسار على القرص
-            if (!imageObj.path) return null;
-
-            const fileBuffer = await fs.readFile(imageObj.path);
-
-            uploaded = await uploadBufferToCloudinary(fileBuffer);
-            return uploaded;
-          } catch (err) {
-            console.error(
-              `Upload/Read failed for variant color ${variant.color.name}:`,
-              err
-            );
-            return null;
+            const uploaded = await uploadBufferToCloudinary(buffer);
+            return { url: uploaded.secure_url, publicId: uploaded.public_id };
           } finally {
-            // 🔔 مهم: حذف الملف المؤقت بعد الرفع أو الفشل
-            if (imageObj.path) {
-              await fs
-                .unlink(imageObj.path)
-                .catch((e) =>
-                  console.error(
-                    "Failed to delete temp file:",
-                    imageObj.path,
-                    e.message
-                  )
-                );
-            }
+            await fs.unlink(img.path).catch((e) => {
+              console.error(
+                `Failed to delete temp file ${img.path}:`,
+                e.message
+              );
+            });
           }
         });
 
-        const uploads = (await Promise.all(uploadPromises)).filter(Boolean);
+        const uploadedImages = (await Promise.all(uploadPromises)).filter(
+          Boolean
+        );
+        finalImages.push(...uploadedImages);
 
-        const images = uploads.map((u) => ({
-          url: u.secure_url,
-          publicId: u.public_id,
-        }));
+        let variantDoc;
 
-        // 2. إنشاء متغير المنتج في MongoDB
-        const variantDoc = await ProductVariant.create({
-          productId,
-          color: variant.color, // هذا هو كائن اللون الأصلي
-          sizes: variant.sizes,
-          images,
-          isDefault: variant.isDefault,
-        });
+        if (v._id && isUpdate) {
+          const oldVariant = await ProductVariant.findById(v._id);
+
+          if (oldVariant) {
+            const oldPublicIds = oldVariant.images.map((i) => i.publicId);
+            const currentOldImagesPublicIds = v.oldImages.map(
+              (i) => i.publicId
+            );
+
+            const removedImages = oldPublicIds.filter(
+              (pid) => !currentOldImagesPublicIds.includes(pid)
+            );
+
+            await Promise.all(
+              removedImages.map((pid) =>
+                deleteFromCloudinary(pid).catch(() => {})
+              )
+            );
+          }
+
+          variantDoc = await ProductVariant.findByIdAndUpdate(
+            v._id,
+            {
+              color: v.color,
+              sizes: v.sizes,
+              images: finalImages,
+              isDefault: v.isDefault,
+            },
+            { new: true }
+          );
+        } else {
+          variantDoc = await ProductVariant.create({
+            productId,
+            color: v.color,
+            sizes: v.sizes,
+            images: finalImages,
+            isDefault: v.isDefault,
+          });
+        }
 
         variantIds.push(variantDoc._id);
-        //
-        const firstImage = images.length > 0 ? images[0].url : null;
 
-        allColors.push({
-          name: variant.color.name,
-          value: variant.color.value,
-          image: firstImage,
-        });
-        //
-        console.log("Variant saved:", variantDoc._id);
+        const firstImage = finalImages[0]?.url || null;
+        if (!allColors.some((c) => c.name === v.color.name)) {
+          allColors.push({
+            name: v.color.name,
+            value: v.color.value,
+            image: firstImage,
+          });
+        }
       }
 
-      // 3. تحديث المنتج (القسم المُعدّل)
+      if (isUpdate) {
+        await ProductVariant.deleteMany({
+          productId,
+          _id: { $nin: variantIds },
+        });
+      }
 
-      // 🔔 التحسين لحل مشكلة CastError: جمع كائنات الألوان الفريدة
-      // const allColors = parsedVariants.map((v) => v.color);
+      // const freshVariants = await ProductVariant.find({ productId });
+      // const totalStock = freshVariants.reduce(
+      //   (sum, variant) =>
+      //     sum + variant.sizes.reduce((s, size) => s + (size.stock || 0), 0),
+      //   0
+      // );
+      // const isAvailable = totalStock > 0;
 
-      // const uniqueColorsMap = new Map();
-      // allColors.forEach((colorObj) => {
-      //   if (colorObj && colorObj.name) {
-      //     uniqueColorsMap.set(colorObj.name, colorObj);
-      //   }
+      // allColors.sort((a, b) => {
+      //   const vA = variants.find((v) => v.color.name === a.name);
+      //   const vB = variants.find((v) => v.color.name === b.name);
+      //   return vA?.isDefault ? -1 : vB?.isDefault ? 1 : 0;
       // });
 
-      // const colorsSummary = Array.from(uniqueColorsMap.values());
+      // await Product.findByIdAndUpdate(productId, {
+      //   variants: variantIds,
+      //   colors: allColors,
+      //   totalStock,
+      //   isAvailable,
+      //   numVariants: variantIds.length,
+      // });
 
-      const product = await Product.findByIdAndUpdate(
-        productId,
-        {
-          variants: variantIds,
-          colors: allColors,
-          // colors: colorsSummary,
-        },
-        { new: true, runValidators: true }
+      // 1. جلب البيانات النهائية من قاعدة البيانات لضمان المزامنة
+      const freshVariants = await ProductVariant.find({ productId });
+
+      // 2. تحديث مصفوفة الألوان مع إضافة المقاسات لكل لون (مهم للملابس)
+      const updatedColors = freshVariants.map((fv) => ({
+        name: fv.color.name,
+        value: fv.color.value,
+        image: fv.images[0]?.url || null,
+        sizes: fv.sizes.map((s) => ({
+          size: s.size,
+          stock: Number(s.stock) || 0,
+        })),
+      }));
+
+      // 3. ترتيب الألوان بحيث يظهر الـ isDefault أولاً
+      updatedColors.sort((a, b) => {
+        const vA = freshVariants.find((v) => v.color.name === a.name);
+        const vB = freshVariants.find((v) => v.color.name === b.name);
+        return vA?.isDefault ? -1 : vB?.isDefault ? 1 : 0;
+      });
+
+      // 4. حساب إجمالي المخزون
+      const totalStock = freshVariants.reduce(
+        (sum, variant) =>
+          sum +
+          variant.sizes.reduce((s, size) => s + (Number(size.stock) || 0), 0),
+        0
       );
 
-      if (!product) throw new Error("Product not found");
-
+      // 5. التحديث النهائي للمنتج (إملاء كل الحقول بما فيها الـ variants)
+      await Product.findByIdAndUpdate(productId, {
+        variants: freshVariants.map((v) => v._id), // حل مشكلة المصفوفة الفارغة
+        colors: updatedColors,
+        totalStock,
+        isAvailable: totalStock > 0,
+        numVariants: freshVariants.length,
+      });
       console.log(`✅ Worker finished product: ${productId}`);
       return true;
     } catch (err) {
-      console.error("Worker failed:", err);
+      console.error("❌ Worker failed:", err);
       throw err;
     }
   },
-  { connection }
+  { connection, lockDuration: 60000 }
 );

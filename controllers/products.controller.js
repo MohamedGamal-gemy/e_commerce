@@ -1,7 +1,10 @@
 const Product = require("../models/product");
 const { productQueue } = require("../queues/productQueue");
 const fs = require("fs"); // للاستخدام المتزامن في catch block
-
+const {
+  processVariantsForQueue,
+  cleanupTempFiles,
+} = require("../utils/productHelpers");
 const cloudinary = require("../config/cloudinary");
 const mongoose = require("mongoose");
 const ProductVariant = require("../models/productVariant");
@@ -394,90 +397,362 @@ exports.getProducts = getProducts;
 //   }
 // };
 
-exports.createProduct = async (req, res, next) => {
+// exports.createProduct = async (req, res, next) => {
+//   try {
+//     const {
+//       title,
+//       description,
+//       price,
+//       productType,
+//       productTypeName,
+//       status,
+//       // colors,
+//       variants,
+//     } = req.body;
+
+//     // parsedColors = JSON.parse(colors);
+//     const parsedVariants = JSON.parse(variants || "[]");
+
+//     // 1. إنشاء المنتج في MongoDB
+//     const product = await Product.create({
+//       title,
+//       description,
+//       price,
+//       productType,
+//       productTypeName,
+//       status,
+//       // colors: parsedColors,
+//     });
+//     console.log("productTypeName", productTypeName);
+//     // console.log("allColors", colors);
+
+//     // 🔔 التحسين: ربط الملفات بمساراتها (Paths) بدلاً من الـ Buffers
+//     let fileIndex = 0;
+//     const variantsWithFilePaths = parsedVariants.map((variant) => {
+//       const imagesWithPaths = [];
+
+//       // نمر على عدد الصور المتوقعة لهذا المتغير
+//       // for (let i = 0; i < variant.images.length; i++) {
+//       //   const file = req.files[fileIndex++]; // Multer DiskStorage يضيف خاصية `path`
+
+//       //   if (file) {
+//       //     imagesWithPaths.push({
+//       //       // 🔔 تمرير مسار الملف فقط (String) - الحجم صغير جداً
+//       //       path: file.path,
+//       //       originalname: file.originalname,
+//       //       mimetype: file.mimetype,
+//       //     });
+//       //   }
+//       // }
+//       // for (let i = 0; i < variant.newImagesCount; i++) {
+//       //   const file = req.files[fileIndex++];
+//       //   if (file) {
+//       //     imagesWithPaths.push({
+//       //       path: file.path,
+//       //       originalname: file.originalname,
+//       //       mimetype: file.mimetype,
+//       //     });
+//       //   }
+//       // }
+
+//       for (let i = 0; i < variant.newImagesCount; i++) {
+//         const file = req.files[fileIndex++]; // ناخد الصور واحدة واحدة
+//         if (file) {
+//           imagesWithPaths.push({
+//             path: file.path, // المسار المؤقت للملف
+//             originalname: file.originalname,
+//             mimetype: file.mimetype,
+//           });
+//         }
+//       }
+
+//       return {
+//         ...variant,
+//         images: imagesWithPaths, // يحتوي الآن على مسارات الملفات المؤقتة
+//       };
+//     });
+
+//     // 2. إضافة المهمة إلى صف الانتظار (Job)
+//     await productQueue.add("productAdd", {
+//       productId: product._id,
+//       variants: variantsWithFilePaths, // بيانات صغيرة (مسارات Strings)
+//     });
+
+//     res.status(201).json({
+//       success: true,
+//       message:
+//         "Product created. Images & variants are processing in background.",
+//       productId: product._id,
+//     });
+//   } catch (err) {
+//     // 🔔 مهم: إذا حدث خطأ في المتحكم، يجب حذف الملفات المؤقتة من القرص.
+//     if (req.files && req.files.length > 0) {
+//       req.files.forEach((file) => {
+//         // نستخدم fs.unlinkSync لأننا في block متزامن
+//         try {
+//           if (fs.existsSync(file.path)) {
+//             fs.unlinkSync(file.path);
+//           }
+//         } catch (e) {
+//           console.error(
+//             "Failed to delete temp file during error handling:",
+//             e.message
+//           );
+//         }
+//       });
+//     }
+//     next(err);
+//   }
+// };
+
+// //
+
+// exports.updateProduct = async (req, res, next) => {
+//   try {
+//     const {
+//       title,
+//       description,
+//       price,
+//       productType,
+//       productTypeName,
+//       status,
+//       variants,
+//     } = req.body;
+
+//     const { id: productId } = req.params;
+
+//     if (!productId) return next(new ApiError("Product ID is required", 400));
+//     console.log("productTypeName", productTypeName);
+
+//     // Parse variants incoming from frontend
+//     const parsedVariants = JSON.parse(variants || "[]");
+
+//     // 1) 🟦 Update product basic fields
+//     const product = await Product.findByIdAndUpdate(
+//       productId,
+//       {
+//         title,
+//         description,
+//         price,
+//         productType,
+//         productTypeName,
+//         status,
+//       },
+//       { new: true }
+//     );
+
+//     if (!product) return next(new ApiError("Product not found", 404));
+
+//     console.log("📌 Product updated:", product._id);
+
+//     // 2) 🟦 Process variants + images
+//     let fileIndex = 0;
+
+//     const variantsWithFiles = parsedVariants.map((v) => {
+//       const newImages = [];
+
+//       // عدد الصور الجديدة المتوقع (حسب الفرونت)
+//       for (let i = 0; i < v.newImagesCount; i++) {
+//         const file = req.files[fileIndex++];
+//         if (file) {
+//           newImages.push({
+//             path: file.path,
+//             originalname: file.originalname,
+//             mimetype: file.mimetype,
+//           });
+//         }
+//       }
+
+//       return {
+//         _id: v._id || null, // null = variant جديد
+//         color: v.color,
+//         sizes: v.sizes,
+//         isDefault: v.isDefault,
+
+//         // الصور القديمة من الفروت
+//         oldImages: v.oldImages || [],
+
+//         // الصور الجديدة التي رفعها الـ client
+//         newImages,
+//       };
+//     });
+
+//     // 3) 🟦 إرسال المهمة للـ Worker
+//     await productUpdateQueue.add("processProduct", {
+//       productId,
+//       variants: variantsWithFiles,
+//     });
+
+//     return res.status(200).json({
+//       success: true,
+//       message: "Product update started. Variants & images processing...",
+//       productId,
+//     });
+//   } catch (err) {
+//     console.error("❌ updateProduct Error:", err);
+
+//     // حذف الملفات المؤقتة لو حصل Error
+//     if (req.files && req.files.length > 0) {
+//       req.files.forEach((file) => {
+//         try {
+//           if (fs.existsSync(file.path)) fs.unlinkSync(file.path);
+//         } catch (e) {
+//           console.error("Temp cleanup failed:", e.message);
+//         }
+//       });
+//     }
+
+//     return next(err);
+//   }
+// };
+
+// دالة مشتركة لتنفيذ منطق التحكم (Controller Logic)
+// exports.processProductController = async (req, res, next) => {
+//   const {
+//     title,
+//     description,
+//     price,
+//     productType,
+//     productTypeName,
+//     status,
+//     variants,
+//   } = req.body;
+//   const productId = req.params.id; // سيكون undefined في حالة الإنشاء
+
+//   // 🔔 1. إنشاء/تحديث المنتج الأساسي
+//   let product;
+//   try {
+//     if (productId) {
+//       // حالة التحديث
+//       product = await Product.findByIdAndUpdate(
+//         productId,
+//         {
+//           title,
+//           description,
+//           price,
+//           productType,
+//           productTypeName,
+//           status,
+//         },
+//         { new: true }
+//       );
+//       if (!product) return next(new ApiError("Product not found", 404));
+//     } else {
+//       // حالة الإنشاء
+//       product = await Product.create({
+//         title,
+//         description,
+//         price,
+//         productType,
+//         productTypeName,
+//         status,
+//       });
+//     }
+//   } catch (err) {
+//     // يجب حذف الملفات المؤقتة حتى لو فشل إنشاء/تحديث المنتج
+//     cleanupTempFiles(req.files); // استخراج دالة لمسح الملفات
+//     return next(err);
+//   }
+
+//   // 🔔 2. معالجة المتغيرات والصور
+//   const variantsWithFiles = processVariantsForQueue(req, variants);
+
+//   // 🔔 3. إضافة المهمة إلى صف الانتظار (Job)
+//   // نستخدم صف انتظار واحد، و Worker واحد
+//   await productQueue.add("processProductJob", {
+//     productId: product._id,
+//     variants: variantsWithFiles,
+//     isUpdate: !!productId, // لتحديد ما إذا كانت عملية تحديث أم إنشاء
+//   });
+
+//   const message = productId
+//     ? "Product update started. Variants & images processing..."
+//     : "Product created. Images & variants are processing in background.";
+
+//   res.status(productId ? 200 : 201).json({
+//     success: true,
+//     message,
+//     productId: product._id,
+//   });
+// };
+
+// // دالة لمسح الملفات المؤقتة
+// const cleanupTempFiles = (files) => {
+//   if (!files || files.length === 0) return;
+//   files.forEach((file) => {
+//     try {
+//       if (fs.existsSync(file.path)) fs.unlinkSync(file.path);
+//     } catch (e) {
+//       console.error("Failed to delete temp file:", e.message);
+//     }
+//   });
+// };
+
+exports.processProductController = async (req, res, next) => {
+  const {
+    title,
+    description,
+    price,
+    productType,
+    productTypeName,
+    status,
+    variants,
+  } = req.body;
+  const productId = req.params.id; // سيكون undefined في حالة الإنشاء
+
+  // 1. إنشاء/تحديث المنتج الأساسي
+  let product;
   try {
-    const {
-      title,
-      description,
-      price,
-      productType,
-      productTypeName,
-      status,
-      // colors,
-      variants,
-    } = req.body;
+    if (productId) {
+      // حالة التحديث (PATCH /:id)
+      product = await Product.findByIdAndUpdate(
+        productId,
+        { title, description, price, productType, productTypeName, status },
+        { new: true }
+      );
+      if (!product) return next(new ApiError("Product not found", 404));
+    } else {
+      // حالة الإنشاء (POST /)
+      product = await Product.create({
+        title,
+        description,
+        price,
+        productType,
+        productTypeName,
+        status,
+      });
+    }
+  } catch (err) {
+    // يجب حذف الملفات المؤقتة حتى لو فشل إنشاء/تحديث المنتج في قاعدة البيانات
+    cleanupTempFiles(req.files);
+    return next(err);
+  }
 
-    // parsedColors = JSON.parse(colors);
-    const parsedVariants = JSON.parse(variants || "[]");
+  try {
+    // 2. معالجة المتغيرات والصور (باستخدام الدالة المستوردة)
+    const variantsWithFiles = processVariantsForQueue(req, variants);
 
-    // 1. إنشاء المنتج في MongoDB
-    const product = await Product.create({
-      title,
-      description,
-      price,
-      productType,
-      productTypeName,
-      status,
-      // colors: parsedColors,
-    });
-    console.log("productTypeName", productTypeName);
-    // console.log("allColors", colors);
-
-    // 🔔 التحسين: ربط الملفات بمساراتها (Paths) بدلاً من الـ Buffers
-    let fileIndex = 0;
-    const variantsWithFilePaths = parsedVariants.map((variant) => {
-      const imagesWithPaths = [];
-
-      // نمر على عدد الصور المتوقعة لهذا المتغير
-      for (let i = 0; i < variant.images.length; i++) {
-        const file = req.files[fileIndex++]; // Multer DiskStorage يضيف خاصية `path`
-
-        if (file) {
-          imagesWithPaths.push({
-            // 🔔 تمرير مسار الملف فقط (String) - الحجم صغير جداً
-            path: file.path,
-            originalname: file.originalname,
-            mimetype: file.mimetype,
-          });
-        }
-      }
-
-      return {
-        ...variant,
-        images: imagesWithPaths, // يحتوي الآن على مسارات الملفات المؤقتة
-      };
-    });
-
-    // 2. إضافة المهمة إلى صف الانتظار (Job)
-    await productQueue.add("processProduct", {
+    // 3. إضافة المهمة إلى صف الانتظار (Job)
+    await productQueue.add("processProductJob", {
+      // اسم الـ Job داخلياً
       productId: product._id,
-      parsedVariants: variantsWithFilePaths, // بيانات صغيرة (مسارات Strings)
+      variants: variantsWithFiles,
+      isUpdate: !!productId,
     });
 
-    res.status(201).json({
+    const message = productId
+      ? "Product update started. Variants & images processing..."
+      : "Product created. Images & variants are processing in background.";
+
+    res.status(productId ? 200 : 201).json({
       success: true,
-      message:
-        "Product created. Images & variants are processing in background.",
+      message,
       productId: product._id,
     });
   } catch (err) {
-    // 🔔 مهم: إذا حدث خطأ في المتحكم، يجب حذف الملفات المؤقتة من القرص.
-    if (req.files && req.files.length > 0) {
-      req.files.forEach((file) => {
-        // نستخدم fs.unlinkSync لأننا في block متزامن
-        try {
-          if (fs.existsSync(file.path)) {
-            fs.unlinkSync(file.path);
-          }
-        } catch (e) {
-          console.error(
-            "Failed to delete temp file during error handling:",
-            e.message
-          );
-        }
-      });
-    }
-    next(err);
+    // مهم جداً: مسح الملفات المؤقتة إذا حدث خطأ بعد إنشاء المنتج ولكن قبل إرسال الـ Job
+    cleanupTempFiles(req.files);
+    return next(err);
   }
 };
 // const Product = require("../models/product");
@@ -741,23 +1016,64 @@ exports.getVariantByColor = asyncHandler(async (req, res, next) => {
 //     .json(new ApiResponse(200, product, "Product info retrieved successfully"));
 // });
 //
+
+exports.deleteProduct = async (req, res, next) => {
+  const { id } = req.params;
+
+  if (!mongoose.Types.ObjectId.isValid(id)) {
+    return next(new ApiError("Invalid product ID", 400));
+  }
+
+  const product = await Product.findByIdAndDelete(id);
+
+  if (!product) {
+    return next(new ApiError("Product not found", 404));
+  }
+
+  // 🔥 نفس الـ Worker لكن ID واحد
+  await productQueue.add("deleteProductJob", {
+    productId: id,
+  });
+
+  res.status(200).json({
+    success: true,
+    message: "Product deleted successfully",
+  });
+};
+
+exports.deleteMultipleProducts = async (req, res, next) => {
+  // افترض أن IDs تأتي في جسم الطلب كمصفوفة (مثال: { "ids": ["id1", "id2", "id3"] })
+  const { ids: productIds } = req.body;
+
+  if (!productIds || !Array.isArray(productIds) || productIds.length === 0) {
+    return next(
+      new ApiError("A list of Product IDs is required for deletion.", 400)
+    );
+  }
+
+  // 1. حذف المنتجات من قاعدة البيانات (كخطوة أولى سريعة)
+  // استخدام deleteMany أسرع بكثير من findByIdAndDelete متكرر.
+  const result = await Product.deleteMany({
+    _id: { $in: productIds },
+  });
+
+  if (result.deletedCount === 0) {
+    return next(new ApiError("No products found with the provided IDs.", 404));
+  }
+
+  // 2. إرسال مهمة واحدة إلى Worker لمعالجة كل عمليات الحذف اللاحقة (Variants والصور)
+  await productQueue.add("deleteMultipleProductsJob", {
+    productIds: productIds,
+  });
+
+  res.status(200).json({
+    success: true,
+    message: `${result.deletedCount} products deleted. Variants and images processing for removal in background.`,
+    deletedCount: result.deletedCount,
+  });
+};
 exports.getProductInfo = asyncHandler(async (req, res, next) => {
   const { slug } = req.params;
-
-  //   const product = await Product.findOne({ slug }).select(
-  //     "title slug description price originalPrice discountType discountValue mainImage colors productTypeName rating numReviews"
-  //   );
-  //   // .populate("productType", "name");
-
-  //   if (!product) return next(new ApiError("Product not found", 404));
-
-  //   res
-  //     .status(200)
-  //     .json(new ApiResponse(200, product, "Product info retrieved successfully"));
-  // });
-  // const product = await Product.findOne({ slug }).select(
-  //   "title slug description price originalPrice discountType discountValue mainImage colors productTypeName rating numReviews"
-  // );
 
   const product = await Product.findOne({ slug });
 
@@ -867,119 +1183,119 @@ exports.getPriceRange = asyncHandler(async (req, res, next) => {
  * @route PUT /api/products/:id
  * @access Private/Admin
  */
-exports.updateProduct = asyncHandler(async (req, res, next) => {
-  const { id } = req.params;
+// exports.updateProduct = asyncHandler(async (req, res, next) => {
+//   const { id } = req.params;
 
-  // 1️⃣ Parse variants
-  if (req.body.variants) {
-    req.body.variants = parseVariants(req.body.variants);
-  }
+//   // 1️⃣ Parse variants
+//   if (req.body.variants) {
+//     req.body.variants = parseVariants(req.body.variants);
+//   }
 
-  // 2️⃣ Validate request data
-  const { error, value } = updateProductSchema.validate(req.body, {
-    abortEarly: false,
-  });
+//   // 2️⃣ Validate request data
+//   const { error, value } = updateProductSchema.validate(req.body, {
+//     abortEarly: false,
+//   });
 
-  if (error) {
-    const errorMessages = error.details
-      .map((detail) => detail.message)
-      .join(", ");
-    return next(new ApiError(`Validation error: ${errorMessages}`, 400));
-  }
+//   if (error) {
+//     const errorMessages = error.details
+//       .map((detail) => detail.message)
+//       .join(", ");
+//     return next(new ApiError(`Validation error: ${errorMessages}`, 400));
+//   }
 
-  const { variants, ...productData } = value;
+//   const { variants, ...productData } = value;
 
-  // 3️⃣ Map uploaded files to variant indices
-  const variantFilesMap = mapVariantFiles(req.files);
+//   // 3️⃣ Map uploaded files to variant indices
+//   const variantFilesMap = mapVariantFiles(req.files);
 
-  // 4️⃣ Update product and variants using service
-  await updateProductAndVariants(id, productData, variants, variantFilesMap);
+//   // 4️⃣ Update product and variants using service
+//   await updateProductAndVariants(id, productData, variants, variantFilesMap);
 
-  // 5️⃣ Fetch and return the updated product
-  const updatedProduct = await fetchProductWithRelations(Product, id);
+//   // 5️⃣ Fetch and return the updated product
+//   const updatedProduct = await fetchProductWithRelations(Product, id);
 
-  if (!updatedProduct) {
-    return next(
-      new ApiError("Product was updated but could not be retrieved", 500)
-    );
-  }
+//   if (!updatedProduct) {
+//     return next(
+//       new ApiError("Product was updated but could not be retrieved", 500)
+//     );
+//   }
 
-  res
-    .status(200)
-    .json(new ApiResponse(200, updatedProduct, "Product updated successfully"));
-});
+//   res
+//     .status(200)
+//     .json(new ApiResponse(200, updatedProduct, "Product updated successfully"));
+// });
 
 /**
  * @desc Partially update a product (PATCH - only update provided fields)
  * @route PATCH /api/products/:id
  * @access Private/Admin
  */
-exports.patchProduct = asyncHandler(async (req, res, next) => {
-  const { id } = req.params;
+// exports.patchProduct = asyncHandler(async (req, res, next) => {
+//   const { id } = req.params;
 
-  // 1️⃣ Parse variants if provided
-  if (req.body.variants) {
-    req.body.variants = parseVariants(req.body.variants);
-  }
+//   // 1️⃣ Parse variants if provided
+//   if (req.body.variants) {
+//     req.body.variants = parseVariants(req.body.variants);
+//   }
 
-  // 2️⃣ Validate request data (all fields optional for PATCH)
-  const { error, value } = updateProductSchema.validate(req.body, {
-    abortEarly: false,
-  });
+//   // 2️⃣ Validate request data (all fields optional for PATCH)
+//   const { error, value } = updateProductSchema.validate(req.body, {
+//     abortEarly: false,
+//   });
 
-  if (error) {
-    const errorMessages = error.details
-      .map((detail) => detail.message)
-      .join(", ");
-    return next(new ApiError(`Validation error: ${errorMessages}`, 400));
-  }
+//   if (error) {
+//     const errorMessages = error.details
+//       .map((detail) => detail.message)
+//       .join(", ");
+//     return next(new ApiError(`Validation error: ${errorMessages}`, 400));
+//   }
 
-  // 3️⃣ Check if at least one field is provided
-  if (Object.keys(value).length === 0) {
-    return next(
-      new ApiError("At least one field must be provided for update", 400)
-    );
-  }
+//   // 3️⃣ Check if at least one field is provided
+//   if (Object.keys(value).length === 0) {
+//     return next(
+//       new ApiError("At least one field must be provided for update", 400)
+//     );
+//   }
 
-  const { variants, ...productData } = value;
+//   const { variants, ...productData } = value;
 
-  // 4️⃣ Map uploaded files to variant indices
-  const variantFilesMap = mapVariantFiles(req.files);
+//   // 4️⃣ Map uploaded files to variant indices
+//   const variantFilesMap = mapVariantFiles(req.files);
 
-  // 5️⃣ Update product and variants using service
-  await updateProductAndVariants(id, productData, variants, variantFilesMap);
+//   // 5️⃣ Update product and variants using service
+//   await updateProductAndVariants(id, productData, variants, variantFilesMap);
 
-  // 6️⃣ Fetch and return the updated product
-  const updatedProduct = await fetchProductWithRelations(Product, id);
+//   // 6️⃣ Fetch and return the updated product
+//   const updatedProduct = await fetchProductWithRelations(Product, id);
 
-  if (!updatedProduct) {
-    return next(
-      new ApiError("Product was updated but could not be retrieved", 500)
-    );
-  }
+//   if (!updatedProduct) {
+//     return next(
+//       new ApiError("Product was updated but could not be retrieved", 500)
+//     );
+//   }
 
-  res
-    .status(200)
-    .json(new ApiResponse(200, updatedProduct, "Product updated successfully"));
-});
+//   res
+//     .status(200)
+//     .json(new ApiResponse(200, updatedProduct, "Product updated successfully"));
+// });
 
 /**
  * @desc Delete a product with variants
  * @route DELETE /api/products/:id
  * @access Private/Admin
  */
-exports.deleteProduct = asyncHandler(async (req, res, next) => {
-  const { id } = req.params;
+// exports.deleteProduct = asyncHandler(async (req, res, next) => {
+//   const { id } = req.params;
 
-  // 1️⃣ Delete product and variants using service
-  await deleteProductAndVariants(id);
+//   // 1️⃣ Delete product and variants using service
+//   await deleteProductAndVariants(id);
 
-  // 2️⃣ Invalidate cache after deleting product
+//   // 2️⃣ Invalidate cache after deleting product
 
-  res
-    .status(200)
-    .json(new ApiResponse(200, null, "Product deleted successfully"));
-});
+//   res
+//     .status(200)
+//     .json(new ApiResponse(200, null, "Product deleted successfully"));
+// });
 /**
  * @desc Get related products based on tags, attributes, and price
  * @route GET /api/products/:slug/related

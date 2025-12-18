@@ -122,53 +122,89 @@ const router = express.Router();
 //   })
 // );
 
+// router.get(
+//   "/",
+//   // verifyTokenAndAdmin,
+//   asyncHandler(async (req, res) => {
+//     const page = parseInt(req.query.page) || 1;
+//     const limit = parseInt(req.query.limit) || 10;
+//     const search = req.query.search || "";
+//     const sortField = req.query.sort || "createdAt";
+//     const sortOrder = req.query.order === "asc" ? 1 : -1;
+
+//     const pipeline = [
+//       {
+//         $match: {
+//           $or: [
+//             { username: { $regex: search, $options: "i" } },
+//             { email: { $regex: search, $options: "i" } },
+//           ],
+//         },
+//       },
+//       {
+//         $sort: { [sortField]: sortOrder },
+//       },
+//       {
+//         $facet: {
+//           data: [
+//             { $skip: (page - 1) * limit },
+//             { $limit: limit },
+//             { $project: { password: 0, __v: 0 } },
+//           ],
+//           totalCount: [{ $count: "count" }],
+//         },
+//       },
+//     ];
+
+//     const result = await User.aggregate(pipeline);
+//     const users = result[0]?.data || [];
+//     const totalCount = result[0]?.totalCount[0]?.count || 0;
+
+//     res.json({
+//       users,
+//       totalPages: Math.ceil(totalCount / limit),
+//       totalCount,
+//       currentPage: page,
+//     });
+//   })
+// );
+
 router.get(
   "/",
-  // verifyTokenAndAdmin,
   asyncHandler(async (req, res) => {
-    const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 10;
-    const search = req.query.search || "";
-    const sortField = req.query.sort || "createdAt";
-    const sortOrder = req.query.order === "asc" ? 1 : -1;
+    // 1. استخراج معاملات البحث من الـ Query String
+    const { q, role, status } = req.query;
 
-    const pipeline = [
-      {
-        $match: {
-          $or: [
-            { username: { $regex: search, $options: "i" } },
-            { email: { $regex: search, $options: "i" } },
-          ],
-        },
-      },
-      {
-        $sort: { [sortField]: sortOrder },
-      },
-      {
-        $facet: {
-          data: [
-            { $skip: (page - 1) * limit },
-            { $limit: limit },
-            { $project: { password: 0, __v: 0 } },
-          ],
-          totalCount: [{ $count: "count" }],
-        },
-      },
-    ];
+    // 2. بناء كائن الاستعلام (Query Object) ديناميكياً
+    let query = {};
 
-    const result = await User.aggregate(pipeline);
-    const users = result[0]?.data || [];
-    const totalCount = result[0]?.totalCount[0]?.count || 0;
+    // البحث بالاسم أو البريد الإلكتروني (غير حساس لحالة الأحرف)
+    if (q) {
+      query.$or = [
+        { username: { $regex: q, $options: "i" } },
+        { email: { $regex: q, $options: "i" } },
+      ];
+    }
 
-    res.json({
-      users,
-      totalPages: Math.ceil(totalCount / limit),
-      totalCount,
-      currentPage: page,
-    });
+    // الفلترة حسب الدور (Admin / User)
+    if (role && role !== "all") {
+      query.role = role;
+    }
+
+    // الفلترة حسب الحالة (Active / Inactive)
+    if (status && status !== "all") {
+      query.isActive = status === "active";
+    }
+
+    // 3. تنفيذ الاستعلام مع الترتيب (الأحدث أولاً) واستثناء كلمة المرور
+    const users = await User.find(query)
+      .select("-password")
+      .sort({ createdAt: -1 }); // ترتيب تنازلي لظروف أحدث المستخدمين في الأعلى
+
+    // 4. إرسال النتائج
+    res.json(users);
   })
 );
-
 /**
  * @desc Get Single User
  * @route /api/users/:id
@@ -177,7 +213,7 @@ router.get(
  */
 router.get(
   "/:id",
-  verifyTokenAndAuthorization,
+  // verifyTokenAndAuthorization,
   asyncHandler(async (req, res) => {
     const user = await User.findById(req.params.id).select("-password -__v");
     if (!user) {
