@@ -368,7 +368,10 @@ router.post(
       dbSession.startTransaction();
 
       try {
-        const order = await Order.findById(orderId).session(dbSession);
+        // const order = await Order.findById(orderId).session(dbSession);
+        const order = await Order.findOne({
+          stripeSessionId: session.id,
+        }).session(dbSession);
 
         if (!order) {
           console.error("⚠️ Order not found in database:", orderId);
@@ -377,8 +380,8 @@ router.post(
         }
 
         // 🛑 Idempotency Check: Avoid double processing
-        if (order.isPaid) {
-          console.log("ℹ️ Order already processed:", orderId);
+        if (order.payment?.status === "paid") {
+          console.log("ℹ️ Order already paid, skipping:", order._id);
           await dbSession.abortTransaction();
           dbSession.endSession();
           return res.sendStatus(200);
@@ -391,14 +394,19 @@ router.post(
           transactionId: session.payment_intent,
           amount_paid: session.amount_total / 100, // حفظ المبلغ المدفع فعلياً
         };
-        order.isPaid = true;
-        order.paidAt = new Date();
         order.status = "processing";
 
         await order.save({ session: dbSession });
 
         // 📦 Update Stock and Purchases
         for (const item of order.items) {
+          console.log(
+            "Updating stock:",
+            item.variant,
+            item.size,
+            item.quantity
+          );
+
           if (item.variant) {
             //
             const variantUpdate = await ProductVariant.updateOne(
