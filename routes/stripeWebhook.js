@@ -398,6 +398,44 @@ router.post(
 
         await order.save({ session: dbSession });
 
+        // // 📦 Update Stock and Purchases
+        // for (const item of order.items) {
+        //   console.log(
+        //     "Updating stock:",
+        //     item.variant,
+        //     item.size,
+        //     item.quantity
+        //   );
+
+        //   if (item.variant) {
+        //     //
+        //     const variantUpdate = await ProductVariant.updateOne(
+        //       {
+        //         _id: item.variant,
+        //         "sizes.size": item.size.toUpperCase(), // 🔥 الحل
+        //         "sizes.stock": { $gte: item.quantity },
+        //       },
+        //       { $inc: { "sizes.$.stock": -item.quantity } },
+        //       { session: dbSession }
+        //     );
+
+        //     //
+        //     if (variantUpdate.modifiedCount === 0) {
+        //       throw new Error(`Insufficient stock for variant ${item.variant}`);
+        //     }
+        //   }
+
+        //   if (item.product) {
+        //     await Product.updateOne(
+        //       { _id: item.product },
+        //       {
+        //         $inc: { purchases: item.quantity, totalStock: -item.quantity },
+        //       },
+        //       { session: dbSession }
+        //     );
+        //   }
+        // }
+
         // 📦 Update Stock and Purchases
         for (const item of order.items) {
           console.log(
@@ -408,23 +446,45 @@ router.post(
           );
 
           if (item.variant) {
-            //
+            // 1️⃣ تحديث الـ Variant
             const variantUpdate = await ProductVariant.updateOne(
               {
                 _id: item.variant,
-                "sizes.size": item.size.toUpperCase(), // 🔥 الحل
+                "sizes.size": item.size.toUpperCase(),
                 "sizes.stock": { $gte: item.quantity },
               },
               { $inc: { "sizes.$.stock": -item.quantity } },
               { session: dbSession }
             );
 
-            //
             if (variantUpdate.modifiedCount === 0) {
               throw new Error(`Insufficient stock for variant ${item.variant}`);
             }
+
+            // 2️⃣ تحديث embedded colors داخل المنتج نفسه
+            const product = await Product.findById(item.product).session(
+              dbSession
+            );
+            if (product) {
+              const colorIndex = product.colors.findIndex(
+                (c) =>
+                  c.value.toLowerCase() ===
+                  variantUpdate.color?.value?.toLowerCase()
+              );
+              if (colorIndex !== -1) {
+                const sizeIndex = product.colors[colorIndex].sizes.findIndex(
+                  (s) => s.size.toUpperCase() === item.size.toUpperCase()
+                );
+                if (sizeIndex !== -1) {
+                  product.colors[colorIndex].sizes[sizeIndex].stock -=
+                    item.quantity;
+                  await product.save({ session: dbSession });
+                }
+              }
+            }
           }
 
+          // 3️⃣ تحديث المبيعات و totalStock
           if (item.product) {
             await Product.updateOne(
               { _id: item.product },
