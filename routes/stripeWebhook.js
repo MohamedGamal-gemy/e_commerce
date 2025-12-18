@@ -337,7 +337,7 @@ const Order = require("../models/order");
 const ProductVariant = require("../models/productVariant");
 const Product = require("../models/product");
 const Cart = require("../models/cart");
-const sendOrderEmail = require("../utils/emailService"); // استيراد خدمة الإيميل
+const sendOrderEmail = require("../utils/sendEmail"); // استيراد خدمة الإيميل
 
 const router = express.Router();
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
