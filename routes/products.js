@@ -429,6 +429,7 @@ router.get("/card-list", async (req, res) => {
             name: c.name,
             value: c.value,
             image: c.image,
+            sizes:c.sizes,
             _id: c._id,
           },
         }))

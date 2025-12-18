@@ -333,7 +333,7 @@ const express = require("express");
 const Stripe = require("stripe");
 const bodyParser = require("body-parser");
 const mongoose = require("mongoose");
-const Order = require("../models/order");
+const Order = require("../models/order/order.schema");
 const ProductVariant = require("../models/productVariant");
 const Product = require("../models/product");
 const Cart = require("../models/cart");
@@ -349,6 +349,7 @@ router.post(
   async (req, res) => {
     const sig = req.headers["stripe-signature"];
     let event;
+console.log("🔥 Stripe Webhook HIT");
 
     // 1. Verify Webhook Signature
     try {
