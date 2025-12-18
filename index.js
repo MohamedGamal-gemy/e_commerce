@@ -15,7 +15,7 @@ const { notFound, errorHandler } = require("./middlewares/errors");
 const connectToDB = require("./config/db");
 
 const app = express();
-console.log("upload");
+// console.log("upload");
 // ✅ Connect to DB
 connectToDB();
 

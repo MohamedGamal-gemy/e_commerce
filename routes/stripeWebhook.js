@@ -498,31 +498,80 @@ router.post(
         // }
 
         // ###############
+        // for (const item of order.items) {
+        //   if (item.variant) {
+        //     // 1️⃣ تحديث الـ Variant (المصدر الرئيسي للمخزون)
+        //     const variantUpdate = await ProductVariant.findOneAndUpdate(
+        //       {
+        //         _id: item.variant,
+        //         "sizes.size": item.size.toUpperCase(),
+        //         "sizes.stock": { $gte: item.quantity },
+        //       },
+        //       { $inc: { "sizes.$.stock": -item.quantity } },
+        //       { session: dbSession, new: true } // نطلب الوثيقة الجديدة لنحصل على قيمة اللون
+        //     );
+
+        //     if (!variantUpdate) {
+        //       throw new Error(
+        //         `Insufficient stock or variant not found: ${item.variant}`
+        //       );
+        //     }
+
+        //     // 2️⃣ تحديث الـ Embedded Color داخل الـ Product (بضغطة واحدة)
+        //     // نستخدم الـ Array Filters لتحديد المقاس واللون بدقة داخل المصفوفة المتداخلة
+        //     await Product.updateOne(
+        //       {
+        //         _id: item.product,
+        //       },
+        //       {
+        //         $inc: {
+        //           "colors.$[colorNode].sizes.$[sizeNode].stock": -item.quantity,
+        //           totalStock: -item.quantity,
+        //           purchases: item.quantity,
+        //         },
+        //       },
+        //       {
+        //         arrayFilters: [
+        //           {
+        //             "colorNode.value": variantUpdate.color.value.toLowerCase(),
+        //           },
+        //           { "sizeNode.size": item.size.toUpperCase() },
+        //         ],
+        //         session: dbSession,
+        //       }
+        //     );
+        //   }
+        // }
+
         for (const item of order.items) {
           if (item.variant) {
-            // 1️⃣ تحديث الـ Variant (المصدر الرئيسي للمخزون)
-            const variantUpdate = await ProductVariant.findOneAndUpdate(
+            console.log(
+              `🔄 Processing: Variant ${item.variant}, Size ${item.size}`
+            );
+
+            // 1️⃣ تحديث الـ Variant (المصدر الأساسي)
+            // نستخدم findOneAndUpdate للحصول على قيمة الـ color.value لاستخدامها في الخطوة التالية
+            const updatedVariant = await ProductVariant.findOneAndUpdate(
               {
                 _id: item.variant,
                 "sizes.size": item.size.toUpperCase(),
                 "sizes.stock": { $gte: item.quantity },
               },
               { $inc: { "sizes.$.stock": -item.quantity } },
-              { session: dbSession, new: true } // نطلب الوثيقة الجديدة لنحصل على قيمة اللون
+              { session: dbSession, new: true } // new: true يعيد البيانات بعد التحديث
             );
 
-            if (!variantUpdate) {
-              throw new Error(
-                `Insufficient stock or variant not found: ${item.variant}`
+            if (!updatedVariant) {
+              console.error(
+                `❌ Stock insufficient for Variant: ${item.variant}`
               );
+              throw new Error(`Insufficient stock for variant ${item.variant}`);
             }
 
-            // 2️⃣ تحديث الـ Embedded Color داخل الـ Product (بضغطة واحدة)
-            // نستخدم الـ Array Filters لتحديد المقاس واللون بدقة داخل المصفوفة المتداخلة
-            await Product.updateOne(
-              {
-                _id: item.product,
-              },
+            // 2️⃣ تحديث الـ Product (المصفوفة المتداخلة: colors -> sizes)
+            // نستخدم arrayFilters للوصول لـ colors[index].sizes[index]
+            const productUpdate = await Product.updateOne(
+              { _id: item.product },
               {
                 $inc: {
                   "colors.$[colorNode].sizes.$[sizeNode].stock": -item.quantity,
@@ -533,13 +582,21 @@ router.post(
               {
                 arrayFilters: [
                   {
-                    "colorNode.value": variantUpdate.color.value.toLowerCase(),
+                    "colorNode.value": updatedVariant.color.value.toLowerCase(),
                   },
                   { "sizeNode.size": item.size.toUpperCase() },
                 ],
                 session: dbSession,
               }
             );
+
+            if (productUpdate.modifiedCount === 0) {
+              console.warn(
+                `⚠️ Warning: Product embedded stock not updated. Check if color value '${updatedVariant.color.value}' and size '${item.size}' exist in Product ID: ${item.product}`
+              );
+            } else {
+              console.log(`✅ Success: Variant and Product stock updated.`);
+            }
           }
         }
         // ###############
