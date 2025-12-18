@@ -349,7 +349,7 @@ router.post(
   async (req, res) => {
     const sig = req.headers["stripe-signature"];
     let event;
-console.log("🔥 Stripe Webhook HIT");
+    console.log("🔥 Stripe Webhook HIT");
 
     // 1. Verify Webhook Signature
     try {
@@ -400,16 +400,18 @@ console.log("🔥 Stripe Webhook HIT");
         // 📦 Update Stock and Purchases
         for (const item of order.items) {
           if (item.variant) {
+            //
             const variantUpdate = await ProductVariant.updateOne(
               {
                 _id: item.variant,
-                "sizes.size": item.size,
+                "sizes.size": item.size.toUpperCase(), // 🔥 الحل
                 "sizes.stock": { $gte: item.quantity },
               },
               { $inc: { "sizes.$.stock": -item.quantity } },
               { session: dbSession }
             );
 
+            //
             if (variantUpdate.modifiedCount === 0) {
               throw new Error(`Insufficient stock for variant ${item.variant}`);
             }
