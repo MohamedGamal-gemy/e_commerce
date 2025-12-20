@@ -45,6 +45,8 @@ GET  http://localhost:9000/api/checkout/admin/order-stats
 ### 
 GET   kind-imogen-e-commerce-fashion-445fc435.koyeb.app/api/products
 # /card-list
+# /card-list
+# /card-list
 # GET  http://localhost:9000/api //products/card-list
 # POST   http://localhost:9000/api/webhook
 # GET  http://localhost:9000/api/colors 

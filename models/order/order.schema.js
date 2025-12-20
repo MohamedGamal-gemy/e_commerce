@@ -1,5 +1,99 @@
-// // const mongoose = require("mongoose");
+// // // const mongoose = require("mongoose");
 
+// // // const orderItemSchema = new mongoose.Schema(
+// // //   {
+// // //     product: {
+// // //       type: mongoose.Schema.Types.ObjectId,
+// // //       ref: "Product",
+// // //       required: true,
+// // //     },
+// // //     variant: {
+// // //       type: mongoose.Schema.Types.ObjectId,
+// // //       ref: "ProductVariant",
+// // //     },
+// // //     size: { type: String },
+// // //     color: { type: String },
+// // //     quantity: { type: Number, required: true, min: 1 },
+// // //     price: { type: Number, required: true },
+// // //     productSnapshot: {
+// // //       title: String,
+// // //       image: String,
+// // //       color: String,
+// // //     },
+// // //   },
+// // //   { _id: false }
+// // // );
+
+// // // const OrderSchema = new mongoose.Schema(
+// // //   {
+// // //     user: {
+// // //       type: mongoose.Schema.Types.ObjectId,
+// // //       ref: "User",
+// // //       required: true,
+// // //     },
+// // //     sessionId: { type: String },
+// // //     items: [orderItemSchema],
+
+// // //     shippingAddress: {
+// // //       fullName: { type: String },
+// // //       addressLine1: { type: String },
+// // //       addressLine2: { type: String },
+// // //       city: { type: String },
+// // //       country: { type: String },
+// // //       phone: { type: String },
+// // //       postalCode: { type: String },
+// // //     },
+
+// // //     billingDetails: {
+// // //       fullName: String,
+// // //       email: String,
+// // //       phone: String,
+// // //       address: String,
+// // //     },
+
+// // //     payment: {
+// // //       method: {
+// // //         type: String,
+// // //         enum: ["cash", "card", "paypal", "wallet"],
+// // //         default: "cash",
+// // //       },
+// // //       status: {
+// // //         type: String,
+// // //         enum: ["pending", "paid", "failed", "refunded"],
+// // //         default: "pending",
+// // //       },
+// // //       transactionId: { type: String },
+// // //     },
+
+// // //     currency: { type: String, default: "EGP" },
+// // //     subtotal: { type: Number, default: 0 },
+// // //     totalPrice: { type: Number, required: true },
+// // //     shippingPrice: { type: Number, default: 0 },
+// // //     discount: { type: Number, default: 0 },
+// // //     stripeSessionId: { type: String },
+
+// // //     status: {
+// // //       type: String,
+// // //       // enum: ["pending", "processing", "shipped", "delivered", "cancelled"],
+// // //       // default: "pending",
+// // //     },
+
+// // //     notes: { type: String, trim: true },
+// // //     isPaid: { type: Boolean, default: false },
+// // //     paidAt: { type: Date },
+// // //     deliveredAt: { type: Date },
+// // //   },
+// // //   { timestamps: true }
+// // // );
+
+// // // module.exports = OrderSchema;
+
+// // const mongoose = require("mongoose");
+// // const crypto = require("crypto");
+
+// // // ==========================================
+// // // 1. Order Item Schema (The Snapshot Logic)
+// // // ==========================================
 // // const orderItemSchema = new mongoose.Schema(
 // //   {
 // //     product: {
@@ -7,54 +101,56 @@
 // //       ref: "Product",
 // //       required: true,
 // //     },
-// //     variant: {
-// //       type: mongoose.Schema.Types.ObjectId,
-// //       ref: "ProductVariant",
+// //     variant: { type: mongoose.Schema.Types.ObjectId, ref: "ProductVariant" },
+// //     size: { type: String, required: true },
+// //     // تخزين اللون كـ Object لسهولة العرض في الـ Dashboard
+// //     color: {
+// //       name: String,
+// //       value: String,
 // //     },
-// //     size: { type: String },
-// //     color: { type: String },
 // //     quantity: { type: Number, required: true, min: 1 },
-// //     price: { type: Number, required: true },
+// //     price: { type: Number, required: true }, // السعر وقت الشراء
+// //     // الـ Snapshot يحمي بياناتك لو المنتج اتمسح أو سعره اتغير
 // //     productSnapshot: {
 // //       title: String,
-// //       image: String,
-// //       color: String,
+// //       mainImage: String,
+// //       colorName: String,
+// //       colorValue: String,
 // //     },
 // //   },
 // //   { _id: false }
 // // );
 
+// // // ==========================================
+// // // 2. Main Order Schema
+// // // ==========================================
 // // const OrderSchema = new mongoose.Schema(
 // //   {
-// //     user: {
-// //       type: mongoose.Schema.Types.ObjectId,
-// //       ref: "User",
-// //       required: true,
-// //     },
-// //     sessionId: { type: String },
+// //     orderNumber: { type: String, unique: true }, // ORD-XXXXXX
+// //     user: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
 // //     items: [orderItemSchema],
 
+// //     // تفاصيل الشحن مقسمة بدقة لربطها بشركات الشحن مستقبلاً
 // //     shippingAddress: {
-// //       fullName: { type: String },
-// //       addressLine1: { type: String },
-// //       addressLine2: { type: String },
-// //       city: { type: String },
-// //       country: { type: String },
-// //       phone: { type: String },
-// //       postalCode: { type: String },
+// //       fullName: String,
+// //       phone: String,
+// //       city: String,
+// //       address: String,
+// //       building: String,
+// //       floor: String,
+// //       apartment: String,
 // //     },
 
 // //     billingDetails: {
 // //       fullName: String,
 // //       email: String,
 // //       phone: String,
-// //       address: String,
 // //     },
 
 // //     payment: {
 // //       method: {
 // //         type: String,
-// //         enum: ["cash", "card", "paypal", "wallet"],
+// //         enum: ["cash", "card", "wallet"],
 // //         default: "cash",
 // //       },
 // //       status: {
@@ -62,37 +158,122 @@
 // //         enum: ["pending", "paid", "failed", "refunded"],
 // //         default: "pending",
 // //       },
-// //       transactionId: { type: String },
+// //       transactionId: String,
 // //     },
-
-// //     currency: { type: String, default: "EGP" },
-// //     subtotal: { type: Number, default: 0 },
-// //     totalPrice: { type: Number, required: true },
-// //     shippingPrice: { type: Number, default: 0 },
-// //     discount: { type: Number, default: 0 },
-// //     stripeSessionId: { type: String },
 
 // //     status: {
 // //       type: String,
-// //       // enum: ["pending", "processing", "shipped", "delivered", "cancelled"],
-// //       // default: "pending",
+// //       enum: [
+// //         "pending",
+// //         "processing",
+// //         "shipped",
+// //         "delivered",
+// //         "cancelled",
+// //         "returned",
+// //       ],
+// //       default: "pending",
 // //     },
 
-// //     notes: { type: String, trim: true },
+// //     // تفاصيل مالية
+// //     currency: { type: String, default: "EGP" },
+// //     subtotal: { type: Number, default: 0 },
+// //     shippingPrice: { type: Number, default: 0 },
+// //     discount: { type: Number, default: 0 },
+// //     totalPrice: { type: Number, required: true },
+
+// //     // تتبع الوقت (Timeline)
 // //     isPaid: { type: Boolean, default: false },
 // //     paidAt: { type: Date },
 // //     deliveredAt: { type: Date },
+// //     notes: { type: String, trim: true },
 // //   },
 // //   { timestamps: true }
 // // );
 
-// // module.exports = OrderSchema;
+// // // ==========================================
+// // // 3. Middlewares & Hooks (Logic Automation)
+// // // ==========================================
+
+// // // توليد رقم الطلب وحساب الإجمالي قبل الحفظ
+// // OrderSchema.pre("save", async function (next) {
+// //   // 1. توليد رقم طلب فريد ORD-7A2B
+// //   if (!this.orderNumber) {
+// //     this.orderNumber = `ORD-${crypto
+// //       .randomBytes(3)
+// //       .toString("hex")
+// //       .toUpperCase()}`;
+// //   }
+
+// //   // 2. حساب المبالغ تلقائياً
+// //   if (this.isModified("items") || this.isNew) {
+// //     const calculatedSubtotal = this.items.reduce(
+// //       (sum, item) => sum + item.price * item.quantity,
+// //       0
+// //     );
+// //     this.subtotal = calculatedSubtotal;
+// //     this.totalPrice =
+// //       calculatedSubtotal + (this.shippingPrice || 0) - (this.discount || 0);
+// //   }
+// //   next();
+// // });
+
+// // // ==========================================
+// // // 4. Static Methods (Analytics for Dashboard)
+// // // ==========================================
+
+// // // إحصائيات لوحة التحكم
+// // OrderSchema.statics.getDashboardStats = async function () {
+// //   return await this.aggregate([
+// //     {
+// //       $group: {
+// //         _id: "$status",
+// //         count: { $sum: 1 },
+// //         revenue: { $sum: "$totalPrice" },
+// //       },
+// //     },
+// //     { $sort: { revenue: -1 } },
+// //   ]);
+// // };
+
+// // // سجل مبيعات آخر 7 أيام
+// // OrderSchema.statics.getWeeklySales = async function () {
+// //   const sevenDaysAgo = new Date();
+// //   sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+
+// //   return await this.aggregate([
+// //     {
+// //       $match: {
+// //         createdAt: { $gte: sevenDaysAgo },
+// //         status: { $ne: "cancelled" },
+// //       },
+// //     },
+// //     {
+// //       $group: {
+// //         _id: { $dateToString: { format: "%Y-%m-%d", date: "$createdAt" } },
+// //         dailyRevenue: { $sum: "$totalPrice" },
+// //         ordersCount: { $sum: 1 },
+// //       },
+// //     },
+// //     { $sort: { _id: 1 } },
+// //   ]);
+// // };
+
+// // // ==========================================
+// // // 5. Indexes (Performance)
+// // // ==========================================
+// // OrderSchema.index({ orderNumber: 1 });
+// // OrderSchema.index({ user: 1 });
+// // OrderSchema.index({ status: 1 });
+// // OrderSchema.index({ createdAt: -1 });
+
+// // const Order = mongoose.model("Order", OrderSchema);
+// // module.exports = Order;
 
 // const mongoose = require("mongoose");
 // const crypto = require("crypto");
 
 // // ==========================================
-// // 1. Order Item Schema (The Snapshot Logic)
+// // 1. Schema Definition
 // // ==========================================
 // const orderItemSchema = new mongoose.Schema(
 //   {
@@ -103,50 +284,65 @@
 //     },
 //     variant: { type: mongoose.Schema.Types.ObjectId, ref: "ProductVariant" },
 //     size: { type: String, required: true },
-//     // تخزين اللون كـ Object لسهولة العرض في الـ Dashboard
 //     color: {
 //       name: String,
 //       value: String,
 //     },
+
+//     //
+//     statusHistory: [
+//       {
+//         status: {
+//           type: String,
+//           enum: [
+//             "pending",
+//             "processing",
+//             "paid",
+//             "shipped",
+//             "delivered",
+//             "cancelled",
+//             "refunded",
+//           ],
+//         },
+//         changedAt: { type: Date, default: Date.now },
+//         note: String,
+//         actionBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" }, // The admin who made the change
+//       },
+//     ],
+//     deliveredAt: Date,
+//     shippedAt: Date,
+//     refundReason: String,
+//     //
 //     quantity: { type: Number, required: true, min: 1 },
-//     price: { type: Number, required: true }, // السعر وقت الشراء
-//     // الـ Snapshot يحمي بياناتك لو المنتج اتمسح أو سعره اتغير
+//     price: { type: Number, required: true },
 //     productSnapshot: {
 //       title: String,
-//       mainImage: String,
+//       image: String,
 //       colorName: String,
 //       colorValue: String,
 //     },
 //   },
+//   //
+
+//   //
 //   { _id: false }
 // );
 
-// // ==========================================
-// // 2. Main Order Schema
-// // ==========================================
 // const OrderSchema = new mongoose.Schema(
 //   {
-//     orderNumber: { type: String, unique: true }, // ORD-XXXXXX
+//     orderNumber: { type: String, unique: true },
 //     user: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
 //     items: [orderItemSchema],
-
-//     // تفاصيل الشحن مقسمة بدقة لربطها بشركات الشحن مستقبلاً
-//     shippingAddress: {
-//       fullName: String,
-//       phone: String,
-//       city: String,
-//       address: String,
-//       building: String,
-//       floor: String,
-//       apartment: String,
-//     },
-
 //     billingDetails: {
 //       fullName: String,
 //       email: String,
 //       phone: String,
+//       address: String,
 //     },
-
+//     shippingAddress: {
+//       city: String,
+//       address: String,
+//     },
 //     payment: {
 //       method: {
 //         type: String,
@@ -158,45 +354,34 @@
 //         enum: ["pending", "paid", "failed", "refunded"],
 //         default: "pending",
 //       },
-//       transactionId: String,
 //     },
-
 //     status: {
 //       type: String,
 //       enum: [
 //         "pending",
 //         "processing",
+//         "paid",
 //         "shipped",
 //         "delivered",
 //         "cancelled",
-//         "returned",
 //       ],
 //       default: "pending",
 //     },
-
-//     // تفاصيل مالية
-//     currency: { type: String, default: "EGP" },
 //     subtotal: { type: Number, default: 0 },
 //     shippingPrice: { type: Number, default: 0 },
 //     discount: { type: Number, default: 0 },
-//     totalPrice: { type: Number, required: true },
-
-//     // تتبع الوقت (Timeline)
-//     isPaid: { type: Boolean, default: false },
-//     paidAt: { type: Date },
-//     deliveredAt: { type: Date },
-//     notes: { type: String, trim: true },
+//     // 💡 الحل: قمنا بإزالة required: true لأن الـ Hook سيقوم بحسابه
+//     totalPrice: { type: Number, default: 0 },
+//     stripeSessionId: String,
 //   },
 //   { timestamps: true }
 // );
 
 // // ==========================================
-// // 3. Middlewares & Hooks (Logic Automation)
+// // 2. The Correct Hook Logic
 // // ==========================================
-
-// // توليد رقم الطلب وحساب الإجمالي قبل الحفظ
-// OrderSchema.pre("save", async function (next) {
-//   // 1. توليد رقم طلب فريد ORD-7A2B
+// OrderSchema.pre("save", function (next) {
+//   // 1. توليد رقم الطلب إذا لم يوجد
 //   if (!this.orderNumber) {
 //     this.orderNumber = `ORD-${crypto
 //       .randomBytes(3)
@@ -204,24 +389,22 @@
 //       .toUpperCase()}`;
 //   }
 
-//   // 2. حساب المبالغ تلقائياً
-//   if (this.isModified("items") || this.isNew) {
-//     const calculatedSubtotal = this.items.reduce(
-//       (sum, item) => sum + item.price * item.quantity,
-//       0
-//     );
-//     this.subtotal = calculatedSubtotal;
-//     this.totalPrice =
-//       calculatedSubtotal + (this.shippingPrice || 0) - (this.discount || 0);
-//   }
+//   // 2. حساب الإجمالي (نحسبه دائماً قبل الحفظ لضمان الدقة)
+//   const calculatedSubtotal = this.items.reduce(
+//     (sum, item) => sum + item.price * item.quantity,
+//     0
+//   );
+
+//   this.subtotal = calculatedSubtotal;
+//   this.totalPrice =
+//     calculatedSubtotal + (this.shippingPrice || 0) - (this.discount || 0);
+
 //   next();
 // });
 
 // // ==========================================
-// // 4. Static Methods (Analytics for Dashboard)
+// // 3. Admin Dashboard Analytics (Statics)
 // // ==========================================
-
-// // إحصائيات لوحة التحكم
 // OrderSchema.statics.getDashboardStats = async function () {
 //   return await this.aggregate([
 //     {
@@ -231,40 +414,14 @@
 //         revenue: { $sum: "$totalPrice" },
 //       },
 //     },
-//     { $sort: { revenue: -1 } },
-//   ]);
-// };
-
-// // سجل مبيعات آخر 7 أيام
-// OrderSchema.statics.getWeeklySales = async function () {
-//   const sevenDaysAgo = new Date();
-//   sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-
-//   return await this.aggregate([
-//     {
-//       $match: {
-//         createdAt: { $gte: sevenDaysAgo },
-//         status: { $ne: "cancelled" },
-//       },
-//     },
-//     {
-//       $group: {
-//         _id: { $dateToString: { format: "%Y-%m-%d", date: "$createdAt" } },
-//         dailyRevenue: { $sum: "$totalPrice" },
-//         ordersCount: { $sum: 1 },
-//       },
-//     },
-//     { $sort: { _id: 1 } },
 //   ]);
 // };
 
 // // ==========================================
-// // 5. Indexes (Performance)
+// // 4. Optimization & Export
 // // ==========================================
 // OrderSchema.index({ orderNumber: 1 });
-// OrderSchema.index({ user: 1 });
-// OrderSchema.index({ status: 1 });
-// OrderSchema.index({ createdAt: -1 });
+// OrderSchema.index({ "billingDetails.phone": 1 });
 
 // const Order = mongoose.model("Order", OrderSchema);
 // module.exports = Order;
@@ -272,9 +429,6 @@
 const mongoose = require("mongoose");
 const crypto = require("crypto");
 
-// ==========================================
-// 1. Schema Definition
-// ==========================================
 const orderItemSchema = new mongoose.Schema(
   {
     product: {
@@ -284,10 +438,7 @@ const orderItemSchema = new mongoose.Schema(
     },
     variant: { type: mongoose.Schema.Types.ObjectId, ref: "ProductVariant" },
     size: { type: String, required: true },
-    color: {
-      name: String,
-      value: String,
-    },
+    color: { name: String, value: String },
     quantity: { type: Number, required: true, min: 1 },
     price: { type: Number, required: true },
     productSnapshot: {
@@ -315,6 +466,11 @@ const OrderSchema = new mongoose.Schema(
       city: String,
       address: String,
     },
+    // Tracking Info
+    shippingInfo: {
+      carrier: { type: String, default: "" },
+      trackingNumber: { type: String, default: "" },
+    },
     payment: {
       method: {
         type: String,
@@ -326,34 +482,43 @@ const OrderSchema = new mongoose.Schema(
         enum: ["pending", "paid", "failed", "refunded"],
         default: "pending",
       },
+      transactionId: String, // Stripe Payment Intent ID
+      amount_paid: { type: Number, default: 0 },
     },
     status: {
       type: String,
       enum: [
         "pending",
         "processing",
-        "paid",
         "shipped",
         "delivered",
         "cancelled",
+        "refunded",
       ],
       default: "pending",
     },
+    // Audit Trail
+    statusHistory: [
+      {
+        status: String,
+        changedAt: { type: Date, default: Date.now },
+        note: String,
+        actionBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+      },
+    ],
     subtotal: { type: Number, default: 0 },
     shippingPrice: { type: Number, default: 0 },
     discount: { type: Number, default: 0 },
-    // 💡 الحل: قمنا بإزالة required: true لأن الـ Hook سيقوم بحسابه
     totalPrice: { type: Number, default: 0 },
     stripeSessionId: String,
+    shippedAt: Date,
+    deliveredAt: Date,
   },
   { timestamps: true }
 );
 
-// ==========================================
-// 2. The Correct Hook Logic
-// ==========================================
+// Pre-save Hook for Order Number and Totals
 OrderSchema.pre("save", function (next) {
-  // 1. توليد رقم الطلب إذا لم يوجد
   if (!this.orderNumber) {
     this.orderNumber = `ORD-${crypto
       .randomBytes(3)
@@ -361,7 +526,6 @@ OrderSchema.pre("save", function (next) {
       .toUpperCase()}`;
   }
 
-  // 2. حساب الإجمالي (نحسبه دائماً قبل الحفظ لضمان الدقة)
   const calculatedSubtotal = this.items.reduce(
     (sum, item) => sum + item.price * item.quantity,
     0
@@ -374,9 +538,7 @@ OrderSchema.pre("save", function (next) {
   next();
 });
 
-// ==========================================
-// 3. Admin Dashboard Analytics (Statics)
-// ==========================================
+// Admin Dashboard Statics
 OrderSchema.statics.getDashboardStats = async function () {
   return await this.aggregate([
     {
@@ -389,11 +551,9 @@ OrderSchema.statics.getDashboardStats = async function () {
   ]);
 };
 
-// ==========================================
-// 4. Optimization & Export
-// ==========================================
 OrderSchema.index({ orderNumber: 1 });
 OrderSchema.index({ "billingDetails.phone": 1 });
+OrderSchema.index({ status: 1 }); // For fast dashboard filtering
 
 const Order = mongoose.model("Order", OrderSchema);
 module.exports = Order;
