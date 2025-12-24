@@ -125,6 +125,7 @@ app.get("/", (req, res) => {
 
 // app.use("/api/stripe", require("./routes/stripe"));
 // app.use("/api/address", require("./routes/addressRoutes"));
+app.use("/api/dashboard", require("./routes/dashboard.routes"));
 app.use("/api/colors", require("./routes/color.routes"));
 // app.use("/api/products", require("./routes/productFilter"));
 app.use("/api/product-types", require("./routes/productType.route"));

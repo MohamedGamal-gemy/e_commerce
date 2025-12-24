@@ -336,7 +336,8 @@ const mongoose = require("mongoose");
 const Order = require("../models/order/order.schema");
 const ProductVariant = require("../models/productVariant");
 const Product = require("../models/product");
-const Cart = require("../models/cart");
+// const Cart = require("../models/cart");
+const Cart = require("../models/Cart");
 const sendOrderEmail = require("../utils/sendEmail"); // استيراد خدمة الإيميل
 
 const router = express.Router();

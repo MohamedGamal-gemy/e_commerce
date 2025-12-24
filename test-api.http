@@ -43,13 +43,25 @@ GET  http://localhost:9000/api/checkout/admin/order-stats
 # ?type=Sweater&color=Light blue
 
 ### 
+# POST    kind-imogen-e-commerce-fashion-445fc435.koyeb.app/api/auth/logout
 GET   kind-imogen-e-commerce-fashion-445fc435.koyeb.app/api/products
+
 # /card-list
 # /card-list
 # /card-list
 # GET  http://localhost:9000/api //products/card-list
 # POST   http://localhost:9000/api/webhook
-# GET  http://localhost:9000/api/colors 
+###
+# GET  http://localhost:9000/api/checkout/inventory/low-stock
+POST  http://localhost:9000/api/auth/logout
+###
+# GET  http://localhost:9000/api/dashboard/top-customers
+# GET  http://localhost:9000/api/dashboard/overview-v2
+# GET  http://localhost:9000/api/dashboard/sales-trend
+# GET  http://localhost:9000/api/dashboard/top-performers
+# GET  http://localhost:9000/api/dashboard/inventory-alerts
+# GET  http://localhost:9000/api/dashboard/recent-orders
+GET  http://localhost:9000/api/dashboard/top-customers-all
 
 # /variants/by-color
 

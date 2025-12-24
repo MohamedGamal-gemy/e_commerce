@@ -7,6 +7,7 @@ const Stripe = require("stripe");
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 const Cart = require("../models/cart");
 const User = require("../models/user");
+const Product = require("../models/product");
 const GuestCart = require("../models/guestCart");
 const Order = require("../models/order/order.schema");
 const ProductVariant = require("../models/productVariant");
@@ -252,87 +253,6 @@ router.get(
   })
 );
 
-// router.get(
-//   "/admin/order-stats",
-//   asyncHandler(async (req, res) => {
-//     const sevenDaysAgo = new Date();
-//     sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-
-//     const [result] = await Order.aggregate([
-//       {
-//         $facet: {
-//           summary: [
-//             {
-//               $group: {
-//                 _id: null,
-//                 totalRevenue: { $sum: "$totalPrice" },
-//                 totalOrders: { $sum: 1 },
-//                 pendingShipment: {
-//                   $sum: {
-//                     $cond: [{ $in: ["$status", ["paid", "processing"]] }, 1, 0],
-//                   },
-//                 },
-//               },
-//             },
-//           ],
-
-//           dailySales: [
-//             {
-//               $match: {
-//                 createdAt: { $gte: sevenDaysAgo },
-//                 status: { $ne: "cancelled" },
-//               },
-//             },
-//             {
-//               $group: {
-//                 _id: {
-//                   $dateToString: {
-//                     format: "%Y-%m-%d",
-//                     date: "$createdAt",
-//                   },
-//                 },
-//                 sales: { $sum: "$totalPrice" },
-//                 count: { $sum: 1 },
-//               },
-//             },
-//             { $sort: { _id: 1 } },
-//           ],
-
-//           topProducts: [
-//             { $unwind: "$items" },
-//             { $match: { "items.product": { $ne: null } } },
-//             {
-//               $group: {
-//                 _id: "$items.product",
-//                 image: { $first: "$items.productSnapshot.image" },
-//                 title: { $first: "$items.productSnapshot.title" },
-//                 totalSold: { $sum: "$items.quantity" },
-//                 revenue: {
-//                   $sum: {
-//                     $multiply: ["$items.price", "$items.quantity"],
-//                   },
-//                 },
-//               },
-//             },
-//             { $sort: { totalSold: -1 } },
-//             { $limit: 5 },
-//           ],
-//         },
-//       },
-//     ]);
-
-//     res.json({
-//       summary: result.summary[0] || {
-//         totalRevenue: 0,
-//         totalOrders: 0,
-//         pendingShipment: 0,
-//       },
-//       dailySales: result.dailySales,
-//       topProducts: result.topProducts,
-//     });
-//   })
-// );
-
 //
 router.get(
   "/admin/order-stats",
@@ -424,375 +344,6 @@ router.get(
   })
 );
 
-router.get("/orders/analytics", async (req, res) => {
-  try {
-    const { range = "month", status, paymentMethod } = req.query;
-    const now = new Date();
-    let startDate, dateFormat, groupBy;
-
-    // 🗓️ Time range configuration
-    switch (range) {
-      case "day":
-        startDate = new Date(now);
-        startDate.setHours(0, 0, 0, 0);
-        dateFormat = "%Y-%m-%d %H:00";
-        groupBy = "hour";
-        break;
-      case "week":
-        startDate = new Date(now);
-        startDate.setDate(now.getDate() - 7);
-        dateFormat = "%Y-%m-%d";
-        groupBy = "day";
-        break;
-      case "month":
-        startDate = new Date(now.getFullYear(), now.getMonth(), 1);
-        dateFormat = "%Y-%m-%d";
-        groupBy = "day";
-        break;
-      case "year":
-        startDate = new Date(now.getFullYear(), 0, 1);
-        dateFormat = "%Y-%m";
-        groupBy = "month";
-        break;
-      default:
-        startDate = new Date(0);
-        dateFormat = "%Y-%m-%d";
-        groupBy = "day";
-    }
-
-    // 🧩 Base match conditions
-    const matchStage = {
-      createdAt: { $gte: startDate },
-      ...(status && { status }),
-      ...(paymentMethod && { "payment.method": paymentMethod }),
-    };
-
-    // 📊 1. General Statistics
-    const [generalStats, paymentMethods] = await Promise.all([
-      // General order stats
-      Order.aggregate([
-        { $match: matchStage },
-        {
-          $group: {
-            _id: "$status",
-            count: { $sum: 1 },
-            totalRevenue: { $sum: "$totalPrice" },
-            avgOrderValue: { $avg: "$totalPrice" },
-            minOrderValue: { $min: "$totalPrice" },
-            maxOrderValue: { $max: "$totalPrice" },
-          },
-        },
-      ]),
-
-      // Payment method distribution
-      Order.aggregate([
-        { $match: matchStage },
-        {
-          $group: {
-            _id: "$payment.method",
-            count: { $sum: 1 },
-            totalAmount: { $sum: "$totalPrice" },
-          },
-        },
-      ]),
-    ]);
-
-    // Calculate totals
-    const totals = {
-      totalOrders: 0,
-      totalRevenue: 0,
-      avgOrderValue: 0,
-      byStatus: {},
-      paymentMethods: paymentMethods.reduce((acc, method) => {
-        acc[method._id] = {
-          count: method.count,
-          totalAmount: method.totalAmount,
-        };
-        return acc;
-      }, {}),
-    };
-
-    generalStats.forEach((stat) => {
-      totals.totalOrders += stat.count;
-      totals.totalRevenue += stat.totalRevenue || 0;
-      totals.byStatus[stat._id] = {
-        count: stat.count,
-        totalRevenue: stat.totalRevenue,
-        avgOrderValue: stat.avgOrderValue,
-        minOrderValue: stat.minOrderValue,
-        maxOrderValue: stat.maxOrderValue,
-      };
-    });
-
-    totals.avgOrderValue =
-      totals.totalOrders > 0 ? totals.totalRevenue / totals.totalOrders : 0;
-
-    // 📈 2. Time-based Analytics
-    const [revenueTrend, ordersByTime, topProducts, userAcquisition] =
-      await Promise.all([
-        // Revenue trend
-        Order.aggregate([
-          { $match: { ...matchStage, "payment.status": "paid" } },
-          {
-            $group: {
-              _id: {
-                $dateToString: { format: dateFormat, date: "$createdAt" },
-              },
-              totalRevenue: { $sum: "$totalPrice" },
-              orderCount: { $sum: 1 },
-            },
-          },
-          { $sort: { _id: 1 } },
-        ]),
-
-        // Orders by time of day
-        Order.aggregate([
-          { $match: matchStage },
-          {
-            $group: {
-              _id: { $hour: "$createdAt" },
-              count: { $sum: 1 },
-            },
-          },
-          { $sort: { _id: 1 } },
-        ]),
-
-        // Top selling products
-        Order.aggregate([
-          { $match: matchStage },
-          { $unwind: "$items" },
-          {
-            $group: {
-              _id: {
-                productId: "$items.product",
-                variantId: "$items.variant",
-                size: "$items.size",
-                color: "$items.color",
-              },
-              name: { $first: "$items.productSnapshot.title" },
-              image: { $first: "$items.productSnapshot.image" },
-              totalSold: { $sum: "$items.quantity" },
-              totalRevenue: {
-                $sum: { $multiply: ["$items.quantity", "$items.price"] },
-              },
-            },
-          },
-          { $sort: { totalRevenue: -1 } },
-          { $limit: 10 },
-        ]),
-
-        // User acquisition
-        Order.aggregate([
-          { $match: matchStage },
-          {
-            $lookup: {
-              from: "users",
-              localField: "user",
-              foreignField: "_id",
-              as: "userData",
-            },
-          },
-          { $unwind: "$userData" },
-          {
-            $group: {
-              _id: {
-                $dateToString: {
-                  format: dateFormat,
-                  date: "$userData.createdAt",
-                },
-              },
-              newUsers: { $sum: 1 },
-            },
-          },
-          { $sort: { _id: 1 } },
-        ]),
-      ]);
-
-    // 📊 3. Customer Analytics
-    const customerStats = await Order.aggregate([
-      { $match: matchStage },
-      {
-        $group: {
-          _id: "$user",
-          orderCount: { $sum: 1 },
-          totalSpent: { $sum: "$totalPrice" },
-        },
-      },
-      {
-        $group: {
-          _id: null,
-          totalCustomers: { $sum: 1 },
-          repeatCustomers: {
-            $sum: { $cond: [{ $gt: ["$orderCount", 1] }, 1, 0] },
-          },
-          avgOrdersPerCustomer: { $avg: "$orderCount" },
-          avgCustomerValue: { $avg: "$totalSpent" },
-          topSpenders: {
-            $push: {
-              userId: "$_id",
-              orderCount: "$orderCount",
-              totalSpent: "$totalSpent",
-            },
-          },
-        },
-      },
-      {
-        $project: {
-          _id: 0,
-          totalCustomers: 1,
-          repeatCustomers: 1,
-          repeatCustomerRate: {
-            $cond: [
-              { $eq: ["$totalCustomers", 0] },
-              0,
-              { $divide: ["$repeatCustomers", "$totalCustomers"] },
-            ],
-          },
-          avgOrdersPerCustomer: 1,
-          avgCustomerValue: 1,
-          topSpenders: { $slice: ["$topSpenders", 5] },
-        },
-      },
-    ]);
-
-    // 🚚 4. Shipping Analytics
-    const shippingStats = await Order.aggregate([
-      { $match: { ...matchStage, shippingPrice: { $gt: 0 } } },
-      {
-        $group: {
-          _id: null,
-          totalShippingRevenue: { $sum: "$shippingPrice" },
-          avgShippingCost: { $avg: "$shippingPrice" },
-          byCity: {
-            $addToSet: {
-              city: "$shippingAddress.city",
-              count: { $sum: 1 },
-            },
-          },
-        },
-      },
-    ]);
-
-    // 📊 5. Discount Analysis
-    const discountAnalysis = await Order.aggregate([
-      { $match: { ...matchStage, discount: { $gt: 0 } } },
-      {
-        $group: {
-          _id: null,
-          totalDiscounts: { $sum: "$discount" },
-          avgDiscount: { $avg: "$discount" },
-          discountOrders: { $sum: 1 },
-          totalDiscountPercentage: {
-            $avg: {
-              $multiply: [
-                {
-                  $divide: [
-                    "$discount",
-                    { $add: ["$totalPrice", "$discount"] },
-                  ],
-                },
-                100,
-              ],
-            },
-          },
-        },
-      },
-    ]);
-
-    // 📈 6. Growth Metrics
-    const previousPeriodStart = new Date(startDate);
-    const diffTime = now - startDate;
-    previousPeriodStart.setTime(previousPeriodStart.getTime() - diffTime);
-
-    const previousPeriodStats = await Order.aggregate([
-      {
-        $match: {
-          createdAt: { $gte: previousPeriodStart, $lt: startDate },
-          ...(status && { status }),
-          ...(paymentMethod && { "payment.method": paymentMethod }),
-        },
-      },
-      {
-        $group: {
-          _id: null,
-          totalOrders: { $sum: 1 },
-          totalRevenue: { $sum: "$totalPrice" },
-          avgOrderValue: { $avg: "$totalPrice" },
-        },
-      },
-    ]);
-
-    const previousPeriod = previousPeriodStats[0] || {
-      totalOrders: 0,
-      totalRevenue: 0,
-      avgOrderValue: 0,
-    };
-
-    const calculateGrowth = (current, previous) => {
-      if (previous === 0) return current > 0 ? 100 : 0;
-      return ((current - previous) / previous) * 100;
-    };
-
-    const growthMetrics = {
-      ordersGrowth: calculateGrowth(
-        totals.totalOrders,
-        previousPeriod.totalOrders
-      ),
-      revenueGrowth: calculateGrowth(
-        totals.totalRevenue,
-        previousPeriod.totalRevenue
-      ),
-      aovGrowth: calculateGrowth(
-        totals.avgOrderValue,
-        previousPeriod.avgOrderValue
-      ),
-    };
-
-    // ✅ Final Response
-    res.json({
-      summary: {
-        ...totals,
-        growth: growthMetrics,
-        timeRange: {
-          start: startDate,
-          end: now,
-          range,
-          groupBy,
-        },
-      },
-      trends: {
-        revenue: revenueTrend,
-        ordersByTime,
-        userAcquisition,
-      },
-      products: {
-        topSelling: topProducts,
-      },
-      customers: customerStats[0] || {},
-      shipping: shippingStats[0] || {},
-      discounts: discountAnalysis[0] || {},
-      previousPeriodComparison: {
-        current: {
-          start: startDate,
-          end: now,
-          ...totals,
-        },
-        previous: {
-          start: previousPeriodStart,
-          end: startDate,
-          ...previousPeriod,
-        },
-      },
-    });
-  } catch (error) {
-    console.error("❌ Analytics Error:", error);
-    res.status(500).json({
-      error: "Failed to generate analytics",
-      details: error.message,
-    });
-  }
-});
-
 router.patch("/admin/orders/:id/status", async (req, res) => {
   const { status, note } = req.body;
 
@@ -829,7 +380,7 @@ router.patch("/admin/orders/:id/status", async (req, res) => {
         },
       },
       { new: true }
-    ).populate("user", "name email");
+    ).populate("user", "username email");
 
     if (!order) {
       return res
@@ -925,25 +476,60 @@ router.patch("/admin/orders/bulk-status", async (req, res) => {
   }
 });
 
-router.get("/inventory/low-stock", async (req, res) => {
-  try {
-    const threshold = 5; // You can make this dynamic via query param
+// router.get(
+//   "/inventory/low-stock",
+//   asyncHandler(async (req, res) => {
+//     const threshold = 5; // You can make this dynamic via query param
 
-    // Find products where any size variant has stock less than threshold
-    const lowStockProducts = await Product.find({
-      "colors.sizes.stock": { $lt: threshold },
-    }).select("title colors totalStock mainImage");
+//     // Find products where any size variant has stock less than threshold
+//     const lowStockProducts = await Product.find({
+//       "colors.sizes.stock": { $lt: threshold },
+//     }).select("title colors totalStock mainImage");
+
+//     res.json({
+//       success: true,
+//       count: lowStockProducts.length,
+//       data: lowStockProducts,
+//     });
+//   })
+// );
+
+router.get(
+  "/inventory/low-stock",
+  asyncHandler(async (req, res) => {
+    const threshold = Number(req.query.threshold) || 5;
+
+    const data = await Product.aggregate([
+      { $unwind: "$colors" },
+      { $unwind: "$colors.sizes" },
+      {
+        $match: {
+          "colors.sizes.stock": { $lt: threshold },
+        },
+      },
+      {
+        $project: {
+          title: 1,
+          // mainImage: 1,
+          // image: 1,
+          color: {
+            name: "$colors.name",
+            value: "$colors.value",
+            image: "$colors.image",
+          },
+          size: "$colors.sizes.size",
+          stock: "$colors.sizes.stock",
+        },
+      },
+      { $sort: { stock: 1 } },
+    ]);
 
     res.json({
       success: true,
-      count: lowStockProducts.length,
-      data: lowStockProducts,
+      count: data.length,
+      data,
     });
-  } catch (error) {
-    res
-      .status(500)
-      .json({ success: false, message: "Failed to fetch low stock alerts" });
-  }
-});
+  })
+);
 
 module.exports = router;
