@@ -5,17 +5,19 @@ const asyncHandler = require("express-async-handler");
 
 const Stripe = require("stripe");
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
-const Cart = require("../models/cart");
+// const Cart = require("../models/cart");
 const User = require("../models/user");
 const Product = require("../models/product");
-const GuestCart = require("../models/guestCart");
+// const GuestCart = require("../models/guestCart");
 const Order = require("../models/order/order.schema");
 const ProductVariant = require("../models/productVariant");
 const { protect } = require("../middlewares/protect");
+const GuestCart = require("../models/GuestCart");
+const Cart = require("../models/Cart");
 
 router.post(
   "/create-order",
-  protect,
+  // protect,
   asyncHandler(async (req, res) => {
     const {
       billingDetails,
@@ -25,7 +27,7 @@ router.post(
     } = req.body;
 
     const userId = req.user.id || req.user._id;
-    const sessionId = req.cookies?.sessionId || req.headers["x-session-id"];
+    // const sessionId = req.cookies?.sessionId || req.headers["x-session-id"];
 
     // 1. Validation (English Messages)
     if (
@@ -40,15 +42,15 @@ router.post(
     }
 
     // 2. Merge Guest Cart (Professional Logic)
-    if (sessionId) {
-      const guestCart = await GuestCart.findOne({ sessionId, isActive: true });
-      if (guestCart?.items?.length) {
-        for (const item of guestCart.items) {
-          await Cart.addItem(userId, item);
-        }
-        await GuestCart.deleteOne({ sessionId });
-      }
-    }
+    // if (sessionId) {
+    //   const guestCart = await GuestCart.findOne({ sessionId, isActive: true });
+    //   if (guestCart?.items?.length) {
+    //     for (const item of guestCart.items) {
+    //       await Cart.addItem(userId, item);
+    //     }
+    //     await GuestCart.deleteOne({ sessionId });
+    //   }
+    // }
 
     // 3. Fetch User Cart
     const cart = await Cart.findOne({ user: userId, isActive: true })
