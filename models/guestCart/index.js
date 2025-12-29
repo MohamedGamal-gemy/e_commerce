@@ -5,4 +5,4 @@ require("./guestCart.hooks")(GuestCartSchema);
 require("./guestCart.statics")(GuestCartSchema);
 require("./guestCart.indexes")(GuestCartSchema);
 
-module.exports = mongoose.model("GuestCart", GuestCartSchema);
+// module.exports = mongoose.model("GuestCart", GuestCartSchema);

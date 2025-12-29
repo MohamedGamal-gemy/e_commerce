@@ -12,17 +12,56 @@ const {
 
 const { protectOption } = require("../middlewares/protectOption");
 const { guestSession } = require("../middleware/guestSession");
-// const { getCartCount } = require("../services/cart.service");
+const {
+  validateAddToCart,
+  validateUpdateQuantity,
+  validateRemoveItem,
+  rateLimitCartOperations
+} = require("../middlewares/cartValidation");
+const {
+  validateCartAccess,
+  sanitizeCartInput,
+  checkCartOperationAllowed
+} = require("../middlewares/cartAuth");
 
+// Apply authentication and session middleware to all routes
 router.use(protectOption);
 router.use(guestSession);
+router.use(validateCartAccess);
 
+// Apply rate limiting to cart operations
+router.use('/items', rateLimitCartOperations);
+router.use('/count', rateLimitCartOperations);
+
+// Cart retrieval routes (read operations)
 router.get("/", getCart);
 router.get("/count", getCartCount);
 
-router.post("/items", addItem);
-router.patch("/items", updateQuantity);
-router.delete("/items", removeItem);
-router.delete("/", clearCart);
+// Cart modification routes with comprehensive validation and security
+router.post("/items",
+  sanitizeCartInput,
+  validateAddToCart,
+  checkCartOperationAllowed,
+  addItem
+);
+
+router.patch("/items",
+  sanitizeCartInput,
+  validateUpdateQuantity,
+  checkCartOperationAllowed,
+  updateQuantity
+);
+
+router.delete("/items",
+  sanitizeCartInput,
+  validateRemoveItem,
+  checkCartOperationAllowed,
+  removeItem
+);
+
+router.delete("/",
+  checkCartOperationAllowed,
+  clearCart
+);
 
 module.exports = router;
