@@ -17,7 +17,7 @@ const Cart = require("../models/Cart");
 
 router.post(
   "/create-order",
-  // protect,
+  protect,
   asyncHandler(async (req, res) => {
     const {
       billingDetails,
