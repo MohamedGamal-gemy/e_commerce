@@ -1,213 +1,13 @@
 // const express = require("express");
 // const Stripe = require("stripe");
 // const bodyParser = require("body-parser");
-// const Order = require("../models/order");
-// const ProductVariant = require("../models/productVariant");
-// const Product = require("../models/product");
-
-// const router = express.Router();
-// const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
-// const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET;
-
-// router.post(
-//   "/",
-//   bodyParser.raw({ type: "application/json" }),
-//   async (req, res) => {
-//     const sig = req.headers["stripe-signature"];
-//     let event;
-
-//     try {
-//       event = stripe.webhooks.constructEvent(req.body, sig, endpointSecret);
-//     } catch (err) {
-//       console.error("❌ Webhook signature verification failed:", err.message);
-//       return res.status(400).send(`Webhook Error: ${err.message}`);
-//     }
-
-//     // ✅ عند نجاح الدفع
-//     if (event.type === "checkout.session.completed") {
-//       const session = event.data.object;
-//       const orderId = session.metadata?.orderId;
-
-//       try {
-//         const order = await Order.findById(orderId);
-
-//         if (!order) {
-//           console.error("⚠️ Order not found:", orderId);
-//           return res.sendStatus(404);
-//         }
-
-//         // 🟢 تحديث حالة الطلب
-//         order.payment = order.payment || {};
-//         order.payment.status = "paid";
-//         order.isPaid = true;
-//         order.paidAt = new Date();
-//         order.status = "processing";
-//         await order.save();
-
-//         // 📦 خصم الـ stock + 📈 تحديث مشتريات المنتج
-//         for (const item of order.items) {
-//           if (item.variant) {
-//             await ProductVariant.updateOne(
-//               { _id: item.variant, "sizes.size": item.size },
-//               { $inc: { "sizes.$.stock": -item.quantity } }
-//             );
-//           }
-//           if (item.product) {
-//             await Product.updateOne(
-//               { _id: item.product },
-//               { $inc: { purchases: item.quantity, totalStock: -item.quantity } }
-//             );
-//           }
-//         }
-
-//         console.log("✅ Stock updated successfully for order:", order._id);
-//         res.sendStatus(200);
-//       } catch (err) {
-//         console.error("❌ Error updating stock:", err);
-//         res.sendStatus(500);
-//       }
-//     } else {
-//       res.sendStatus(200);
-//     }
-//   }
-// );
-
-// module.exports = router;
-
-// const express = require("express");
-// const Stripe = require("stripe");
-// const bodyParser = require("body-parser");
-// const mongoose = require("mongoose"); // تم إضافته لدعم الـ Transactions
-// const Order = require("../models/order");
-// const ProductVariant = require("../models/productVariant");
-// const Product = require("../models/product");
-
-// const router = express.Router();
-// const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
-// const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET;
-
-// router.post(
-//   "/",
-//   bodyParser.raw({ type: "application/json" }),
-//   async (req, res) => {
-//     const sig = req.headers["stripe-signature"];
-//     let event;
-
-//     // 1. التحقق من صحة الـ Webhook Signature
-//     try {
-//       event = stripe.webhooks.constructEvent(req.body, sig, endpointSecret);
-//     } catch (err) {
-//       console.error("❌ Webhook signature verification failed:", err.message);
-//       return res.status(400).send(`Webhook Error: ${err.message}`);
-//     }
-
-//     // 2. معالجة حدث نجاح الدفع فقط
-//     if (event.type === "checkout.session.completed") {
-//       const session = event.data.object;
-//       const orderId = session.metadata?.orderId;
-
-//       // بدء عملية Transaction لضمان تنفيذ كل التعديلات أو تراجعها بالكامل في حال الخطأ
-//       const dbSession = await mongoose.startSession();
-//       dbSession.startTransaction();
-
-//       try {
-//         // جلب الطلب مع ربطه بالجلسة الحالية
-//         const order = await Order.findById(orderId).session(dbSession);
-
-//         if (!order) {
-//           console.error("⚠️ Order not found:", orderId);
-//           await dbSession.abortTransaction();
-//           return res.sendStatus(404);
-//         }
-
-//         // 🛑 حماية من التكرار (Idempotency Check)
-//         if (order.isPaid) {
-//           console.log("ℹ️ Order already processed and marked as paid.");
-//           await dbSession.abortTransaction();
-//           dbSession.endSession();
-//           return res.sendStatus(200);
-//         }
-
-//         // 🟢 تحديث بيانات الدفع والطلب
-//         order.payment = {
-//           method: "card",
-//           status: "paid",
-//           transactionId: session.payment_intent, // تخزين معرف العملية للرجوع إليه
-//         };
-//         order.isPaid = true;
-//         order.paidAt = new Date();
-//         order.status = "processing";
-
-//         await order.save({ session: dbSession });
-
-//         // 📦 تحديث المخزون (Stock) والمبيعات
-//         for (const item of order.items) {
-//           if (item.variant) {
-//             // خصم الكمية من الـ Variant مع التأكد من وجود مخزون كافٍ ($gte)
-//             const variantUpdate = await ProductVariant.updateOne(
-//               {
-//                 _id: item.variant,
-//                 "sizes.size": item.size,
-//                 "sizes.stock": { $gte: item.quantity }, // شرط لضمان عدم النزول تحت الصفر
-//               },
-//               { $inc: { "sizes.$.stock": -item.quantity } },
-//               { session: dbSession }
-//             );
-
-//             if (variantUpdate.modifiedCount === 0) {
-//               throw new Error(
-//                 `Insufficient stock for variant ${item.variant} size ${item.size}`
-//               );
-//             }
-//           }
-
-//           if (item.product) {
-//             // تحديث إحصائيات المنتج الرئيسي
-//             await Product.updateOne(
-//               { _id: item.product },
-//               {
-//                 $inc: { purchases: item.quantity, totalStock: -item.quantity },
-//               },
-//               { session: dbSession }
-//             );
-//           }
-//         }
-
-//         // تنفيذ كل التغييرات في قاعدة البيانات
-//         await dbSession.commitTransaction();
-//         console.log(
-//           "✅ Order marked as paid and stock updated for:",
-//           order._id
-//         );
-//         res.sendStatus(200);
-//       } catch (err) {
-//         // في حال حدوث أي خطأ، يتم إلغاء كل ما تم تنفيذه داخل الـ Transaction
-//         await dbSession.abortTransaction();
-//         console.error(
-//           "❌ Transaction failed, all changes rolled back:",
-//           err.message
-//         );
-//         res.status(500).send("Internal Server Error during order processing");
-//       } finally {
-//         dbSession.endSession();
-//       }
-//     } else {
-//       // إرسال 200 لأي أحداث أخرى لا نهتم بها حالياً
-//       res.sendStatus(200);
-//     }
-//   }
-// );
-
-// module.exports = router;
-
-// const express = require("express");
-// const Stripe = require("stripe");
-// const bodyParser = require("body-parser");
 // const mongoose = require("mongoose");
-// const Order = require("../models/order");
+// const Order = require("../models/order/order.schema");
 // const ProductVariant = require("../models/productVariant");
 // const Product = require("../models/product");
-// const Cart = require("../models/cart"); // Import Cart to clear it
+// // const Cart = require("../models/cart");
+// const Cart = require("../models/Cart");
+// const sendOrderEmail = require("../utils/sendEmail"); // استيراد خدمة الإيميل
 
 // const router = express.Router();
 // const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
@@ -219,6 +19,7 @@
 //   async (req, res) => {
 //     const sig = req.headers["stripe-signature"];
 //     let event;
+//     console.log("🔥 Stripe Webhook HIT");
 
 //     // 1. Verify Webhook Signature
 //     try {
@@ -237,7 +38,10 @@
 //       dbSession.startTransaction();
 
 //       try {
-//         const order = await Order.findById(orderId).session(dbSession);
+//         // const order = await Order.findById(orderId).session(dbSession);
+//         const order = await Order.findOne({
+//           stripeSessionId: session.id,
+//         }).session(dbSession);
 
 //         if (!order) {
 //           console.error("⚠️ Order not found in database:", orderId);
@@ -245,12 +49,9 @@
 //           return res.sendStatus(404);
 //         }
 
-//         // 🛑 Idempotency Check: Avoid processing the same order twice
-//         if (order.isPaid) {
-//           console.log(
-//             "ℹ️ Order already processed and marked as paid:",
-//             orderId
-//           );
+//         // 🛑 Idempotency Check: Avoid double processing
+//         if (order.payment?.status === "paid") {
+//           console.log("ℹ️ Order already paid, skipping:", order._id);
 //           await dbSession.abortTransaction();
 //           dbSession.endSession();
 //           return res.sendStatus(200);
@@ -261,63 +62,101 @@
 //           method: "card",
 //           status: "paid",
 //           transactionId: session.payment_intent,
+//           amount_paid: session.amount_total / 100, // حفظ المبلغ المدفع فعلياً
 //         };
-//         order.isPaid = true;
-//         order.paidAt = new Date();
 //         order.status = "processing";
 
 //         await order.save({ session: dbSession });
 
-//         // 📦 Update Stock and Purchases
 //         for (const item of order.items) {
 //           if (item.variant) {
-//             const variantUpdate = await ProductVariant.updateOne(
+//             console.log(
+//               `🔄 Processing: Variant ${item.variant}, Size ${item.size}`
+//             );
+
+//             // 1️⃣ تحديث الـ Variant (المصدر الأساسي)
+//             // نستخدم findOneAndUpdate للحصول على قيمة الـ color.value لاستخدامها في الخطوة التالية
+//             const updatedVariant = await ProductVariant.findOneAndUpdate(
 //               {
 //                 _id: item.variant,
-//                 "sizes.size": item.size,
+//                 "sizes.size": item.size.toUpperCase(),
 //                 "sizes.stock": { $gte: item.quantity },
 //               },
 //               { $inc: { "sizes.$.stock": -item.quantity } },
-//               { session: dbSession }
+//               { session: dbSession, new: true } // new: true يعيد البيانات بعد التحديث
 //             );
 
-//             if (variantUpdate.modifiedCount === 0) {
-//               throw new Error(
-//                 `Insufficient stock for variant ${item.variant} size ${item.size}`
+//             if (!updatedVariant) {
+//               console.error(
+//                 `❌ Stock insufficient for Variant: ${item.variant}`
 //               );
+//               throw new Error(`Insufficient stock for variant ${item.variant}`);
 //             }
-//           }
 
-//           if (item.product) {
-//             await Product.updateOne(
+//             // 2️⃣ تحديث الـ Product (المصفوفة المتداخلة: colors -> sizes)
+//             // نستخدم arrayFilters للوصول لـ colors[index].sizes[index]
+//             const productUpdate = await Product.updateOne(
 //               { _id: item.product },
 //               {
-//                 $inc: { purchases: item.quantity, totalStock: -item.quantity },
+//                 $inc: {
+//                   "colors.$[colorNode].sizes.$[sizeNode].stock": -item.quantity,
+//                   totalStock: -item.quantity,
+//                   purchases: item.quantity,
+//                 },
 //               },
-//               { session: dbSession }
+//               {
+//                 arrayFilters: [
+//                   {
+//                     "colorNode.value": updatedVariant.color.value.toLowerCase(),
+//                   },
+//                   { "sizeNode.size": item.size.toUpperCase() },
+//                 ],
+//                 session: dbSession,
+//               }
 //             );
+
+//             if (productUpdate.modifiedCount === 0) {
+//               console.warn(
+//                 `⚠️ Warning: Product embedded stock not updated. Check if color value '${updatedVariant.color.value}' and size '${item.size}' exist in Product ID: ${item.product}`
+//               );
+//             } else {
+//               console.log(`✅ Success: Variant and Product stock updated.`);
+//             }
 //           }
 //         }
-
-//         // ✨ NEW: Clear User's Cart after successful payment
+//         // ✨ Clear User's Cart
 //         await Cart.findOneAndUpdate(
 //           { user: order.user },
 //           { $set: { items: [], isActive: true } },
 //           { session: dbSession }
 //         );
 
+//         // تأكيد كل العمليات في قاعدة البيانات
 //         await dbSession.commitTransaction();
-//         console.log(
-//           "✅ Success: Stock updated and cart cleared for order:",
-//           order._id
-//         );
+//         dbSession.endSession();
+
+//         console.log("✅ DB Updated successfully for order:", order._id);
+
+//         // 📧 3. Send Confirmation Email (After DB Success)
+//         try {
+//           const customerEmail = session.customer_details.email;
+//           await sendOrderEmail(customerEmail, order);
+//           console.log("📧 Confirmation email sent to:", customerEmail);
+//         } catch (emailErr) {
+//           console.error(
+//             "❌ Email failed (Order still valid):",
+//             emailErr.message
+//           );
+//         }
+
 //         res.sendStatus(200);
 //       } catch (err) {
-//         await dbSession.abortTransaction();
+//         if (dbSession.inAtomicityStatus !== "COMMITTED") {
+//           await dbSession.abortTransaction();
+//           dbSession.endSession();
+//         }
 //         console.error("❌ Processing Error (Rolling Back):", err.message);
-//         res.status(500).send("Internal Server Error during order processing");
-//       } finally {
-//         dbSession.endSession();
+//         res.status(500).send("Internal Server Error");
 //       }
 //     } else {
 //       res.sendStatus(200);
@@ -327,8 +166,6 @@
 
 // module.exports = router;
 
-// new
-
 const express = require("express");
 const Stripe = require("stripe");
 const bodyParser = require("body-parser");
@@ -336,9 +173,8 @@ const mongoose = require("mongoose");
 const Order = require("../models/order/order.schema");
 const ProductVariant = require("../models/productVariant");
 const Product = require("../models/product");
-// const Cart = require("../models/cart");
 const Cart = require("../models/Cart");
-const sendOrderEmail = require("../utils/sendEmail"); // استيراد خدمة الإيميل
+const sendOrderEmail = require("../utils/sendEmail");
 
 const router = express.Router();
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
@@ -350,281 +186,122 @@ router.post(
   async (req, res) => {
     const sig = req.headers["stripe-signature"];
     let event;
-    console.log("🔥 Stripe Webhook HIT");
 
-    // 1. Verify Webhook Signature
+    // 1. التحقق من صحة الـ Webhook
     try {
       event = stripe.webhooks.constructEvent(req.body, sig, endpointSecret);
     } catch (err) {
-      console.error("❌ Webhook signature verification failed:", err.message);
+      console.error("❌ Webhook Signature Error:", err.message);
       return res.status(400).send(`Webhook Error: ${err.message}`);
     }
 
-    // 2. Process Checkout Completed Event
     if (event.type === "checkout.session.completed") {
       const session = event.data.object;
-      const orderId = session.metadata?.orderId;
-
       const dbSession = await mongoose.startSession();
       dbSession.startTransaction();
 
       try {
-        // const order = await Order.findById(orderId).session(dbSession);
+        // البحث عن الطلب باستخدام Session ID (أكثر أماناً من Metadata)
         const order = await Order.findOne({
           stripeSessionId: session.id,
         }).session(dbSession);
 
         if (!order) {
-          console.error("⚠️ Order not found in database:", orderId);
+          console.error("⚠️ Order not found for session:", session.id);
           await dbSession.abortTransaction();
           return res.sendStatus(404);
         }
 
-        // 🛑 Idempotency Check: Avoid double processing
+        // 🛑 Idempotency Check: لضمان عدم تكرار المعالجة
         if (order.payment?.status === "paid") {
-          console.log("ℹ️ Order already paid, skipping:", order._id);
           await dbSession.abortTransaction();
           dbSession.endSession();
           return res.sendStatus(200);
         }
 
-        // 🟢 Update Order Payment Status
+        // 🟢 تحديث حالة الدفع مبدئياً داخل الـ Transaction
         order.payment = {
           method: "card",
           status: "paid",
           transactionId: session.payment_intent,
-          amount_paid: session.amount_total / 100, // حفظ المبلغ المدفع فعلياً
+          amount_paid: session.amount_total / 100,
         };
         order.status = "processing";
 
-        await order.save({ session: dbSession });
-
-        // // 📦 Update Stock and Purchases
-        // for (const item of order.items) {
-        //   console.log(
-        //     "Updating stock:",
-        //     item.variant,
-        //     item.size,
-        //     item.quantity
-        //   );
-
-        //   if (item.variant) {
-        //     //
-        //     const variantUpdate = await ProductVariant.updateOne(
-        //       {
-        //         _id: item.variant,
-        //         "sizes.size": item.size.toUpperCase(), // 🔥 الحل
-        //         "sizes.stock": { $gte: item.quantity },
-        //       },
-        //       { $inc: { "sizes.$.stock": -item.quantity } },
-        //       { session: dbSession }
-        //     );
-
-        //     //
-        //     if (variantUpdate.modifiedCount === 0) {
-        //       throw new Error(`Insufficient stock for variant ${item.variant}`);
-        //     }
-        //   }
-
-        //   if (item.product) {
-        //     await Product.updateOne(
-        //       { _id: item.product },
-        //       {
-        //         $inc: { purchases: item.quantity, totalStock: -item.quantity },
-        //       },
-        //       { session: dbSession }
-        //     );
-        //   }
-        // }
-
-        // 📦 Update Stock and Purchases
-        // for (const item of order.items) {
-        //   console.log("item", item);
-        //   // console.log(
-        //   //   "Updating stock:",
-        //   //   item.variant,
-        //   //   item.size,
-        //   //   item.quantity
-        //   // );
-
-        //   if (item.variant) {
-        //     // 1️⃣ تحديث الـ Variant
-        //     const variantUpdate = await ProductVariant.updateOne(
-        //       {
-        //         _id: item.variant,
-        //         "sizes.size": item.size.toUpperCase(),
-        //         "sizes.stock": { $gte: item.quantity },
-        //       },
-        //       { $inc: { "sizes.$.stock": -item.quantity } },
-        //       { session: dbSession }
-        //     );
-
-        //     if (variantUpdate.modifiedCount === 0) {
-        //       throw new Error(`Insufficient stock for variant ${item.variant}`);
-        //     }
-
-        //     // 2️⃣ تحديث embedded colors داخل المنتج نفسه
-        //     const product = await Product.findById(item.product).session(
-        //       dbSession
-        //     );
-        //     if (product) {
-        //       const colorIndex = product.colors.findIndex(
-        //         (c) =>
-        //           c.value.toLowerCase() ===
-        //           variantUpdate.color?.value?.toLowerCase()
-        //       );
-        //       if (colorIndex !== -1) {
-        //         const sizeIndex = product.colors[colorIndex].sizes.findIndex(
-        //           (s) => s.size.toUpperCase() === item.size.toUpperCase()
-        //         );
-        //         if (sizeIndex !== -1) {
-        //           product.colors[colorIndex].sizes[sizeIndex].stock -=
-        //             item.quantity;
-        //           await product.save({ session: dbSession });
-        //         }
-        //       }
-        //     }
-        //   }
-
-        //   // 3️⃣ تحديث المبيعات و totalStock
-        //   if (item.product) {
-        //     await Product.updateOne(
-        //       { _id: item.product },
-        //       {
-        //         $inc: { purchases: item.quantity, totalStock: -item.quantity },
-        //       },
-        //       { session: dbSession }
-        //     );
-        //   }
-        // }
-
-        // ###############
-        // for (const item of order.items) {
-        //   if (item.variant) {
-        //     // 1️⃣ تحديث الـ Variant (المصدر الرئيسي للمخزون)
-        //     const variantUpdate = await ProductVariant.findOneAndUpdate(
-        //       {
-        //         _id: item.variant,
-        //         "sizes.size": item.size.toUpperCase(),
-        //         "sizes.stock": { $gte: item.quantity },
-        //       },
-        //       { $inc: { "sizes.$.stock": -item.quantity } },
-        //       { session: dbSession, new: true } // نطلب الوثيقة الجديدة لنحصل على قيمة اللون
-        //     );
-
-        //     if (!variantUpdate) {
-        //       throw new Error(
-        //         `Insufficient stock or variant not found: ${item.variant}`
-        //       );
-        //     }
-
-        //     // 2️⃣ تحديث الـ Embedded Color داخل الـ Product (بضغطة واحدة)
-        //     // نستخدم الـ Array Filters لتحديد المقاس واللون بدقة داخل المصفوفة المتداخلة
-        //     await Product.updateOne(
-        //       {
-        //         _id: item.product,
-        //       },
-        //       {
-        //         $inc: {
-        //           "colors.$[colorNode].sizes.$[sizeNode].stock": -item.quantity,
-        //           totalStock: -item.quantity,
-        //           purchases: item.quantity,
-        //         },
-        //       },
-        //       {
-        //         arrayFilters: [
-        //           {
-        //             "colorNode.value": variantUpdate.color.value.toLowerCase(),
-        //           },
-        //           { "sizeNode.size": item.size.toUpperCase() },
-        //         ],
-        //         session: dbSession,
-        //       }
-        //     );
-        //   }
-        // }
-
+        // مصفوفة لتتبع العناصر التي قد تفشل بسبب المخزون
         for (const item of order.items) {
-          if (item.variant) {
-            console.log(
-              `🔄 Processing: Variant ${item.variant}, Size ${item.size}`
+          const targetSize = item.size.toUpperCase(); // توحيد الحالة لـ XL, L, M
+
+          // 1️⃣ خصم المخزون من الـ Variant (Atomic Update)
+          const updatedVariant = await ProductVariant.findOneAndUpdate(
+            {
+              _id: item.variant,
+              "sizes.size": targetSize,
+              "sizes.stock": { $gte: item.quantity }, // التأكد من كفاية المخزون
+            },
+            { $inc: { "sizes.$.stock": -item.quantity } },
+            { session: dbSession, new: true }
+          );
+
+          if (!updatedVariant) {
+            // 🚨 حالة حرجة: العميل دفع ولكن المخزون انتهى الآن!
+            console.error(
+              `🚨 STOCK CONFLICT: Order ${order._id}, Variant ${item.variant}`
             );
 
-            // 1️⃣ تحديث الـ Variant (المصدر الأساسي)
-            // نستخدم findOneAndUpdate للحصول على قيمة الـ color.value لاستخدامها في الخطوة التالية
-            const updatedVariant = await ProductVariant.findOneAndUpdate(
-              {
-                _id: item.variant,
-                "sizes.size": item.size.toUpperCase(),
-                "sizes.stock": { $gte: item.quantity },
-              },
-              { $inc: { "sizes.$.stock": -item.quantity } },
-              { session: dbSession, new: true } // new: true يعيد البيانات بعد التحديث
-            );
+            // تحديث حالة الطلب لـ "مشكلة في المخزون" بدلاً من إيقاف السيستم
+            order.status = "inventory_conflict";
+            order.internalNotes = `Paid but item ${item.variant} size ${targetSize} ran out.`;
+            await order.save({ session: dbSession });
 
-            if (!updatedVariant) {
-              console.error(
-                `❌ Stock insufficient for Variant: ${item.variant}`
-              );
-              throw new Error(`Insufficient stock for variant ${item.variant}`);
-            }
+            // ننهي المعاملة هنا ونرسل تنبيه للمدير (Admin)
+            await dbSession.commitTransaction();
+            dbSession.endSession();
 
-            // 2️⃣ تحديث الـ Product (المصفوفة المتداخلة: colors -> sizes)
-            // نستخدم arrayFilters للوصول لـ colors[index].sizes[index]
-            const productUpdate = await Product.updateOne(
-              { _id: item.product },
-              {
-                $inc: {
-                  "colors.$[colorNode].sizes.$[sizeNode].stock": -item.quantity,
-                  totalStock: -item.quantity,
-                  purchases: item.quantity,
-                },
-              },
-              {
-                arrayFilters: [
-                  {
-                    "colorNode.value": updatedVariant.color.value.toLowerCase(),
-                  },
-                  { "sizeNode.size": item.size.toUpperCase() },
-                ],
-                session: dbSession,
-              }
-            );
-
-            if (productUpdate.modifiedCount === 0) {
-              console.warn(
-                `⚠️ Warning: Product embedded stock not updated. Check if color value '${updatedVariant.color.value}' and size '${item.size}' exist in Product ID: ${item.product}`
-              );
-            } else {
-              console.log(`✅ Success: Variant and Product stock updated.`);
-            }
+            // إرسال إيميل تنبيه للدعم الفني (اختياري)
+            return res.sendStatus(200);
           }
+
+          // 2️⃣ تحديث الـ Product (Denormalized Data)
+          await Product.updateOne(
+            { _id: item.product },
+            {
+              $inc: {
+                "colors.$[colorNode].sizes.$[sizeNode].stock": -item.quantity,
+                totalStock: -item.quantity,
+                purchases: item.quantity,
+              },
+            },
+            {
+              arrayFilters: [
+                { "colorNode.value": updatedVariant.color.value }, // مطابقة دقيقة
+                { "sizeNode.size": targetSize },
+              ],
+              session: dbSession,
+            }
+          );
         }
-        // ###############
-        // ✨ Clear User's Cart
+
+        // ✨ تفريغ سلة المستخدم (بما أن الطلب نجح)
         await Cart.findOneAndUpdate(
           { user: order.user },
           { $set: { items: [], isActive: true } },
           { session: dbSession }
         );
 
-        // تأكيد كل العمليات في قاعدة البيانات
+        await order.save({ session: dbSession });
+
+        // تأكيد كل التغييرات
         await dbSession.commitTransaction();
         dbSession.endSession();
 
-        console.log("✅ DB Updated successfully for order:", order._id);
+        console.log("✅ Order Processed Successfully:", order._id);
 
-        // 📧 3. Send Confirmation Email (After DB Success)
-        try {
-          const customerEmail = session.customer_details.email;
-          await sendOrderEmail(customerEmail, order);
-          console.log("📧 Confirmation email sent to:", customerEmail);
-        } catch (emailErr) {
-          console.error(
-            "❌ Email failed (Order still valid):",
-            emailErr.message
-          );
-        }
+        // 📧 إرسال إيميل التأكيد للعميل (خارج الـ Transaction لضمان السرعة)
+        const customerEmail = session.customer_details.email;
+        sendOrderEmail(customerEmail, order).catch((err) =>
+          console.error("📧 Email Error:", err)
+        );
 
         res.sendStatus(200);
       } catch (err) {
@@ -632,7 +309,7 @@ router.post(
           await dbSession.abortTransaction();
           dbSession.endSession();
         }
-        console.error("❌ Processing Error (Rolling Back):", err.message);
+        console.error("❌ Webhook Processing Failed:", err.message);
         res.status(500).send("Internal Server Error");
       }
     } else {

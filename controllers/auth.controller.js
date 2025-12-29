@@ -230,33 +230,10 @@ exports.register = async (req, res) => {
 //   }
 // };
 
-// exports.login = async (req, res) => {
-//   try {
-//     // جلب الـ sessionId من الـ request
-//     const sessionId = req.sessionId;
-
-//     const { user, accessToken, refreshToken } = await authService.loginUser(
-//       req.body,
-//       sessionId // تمرير الـ ID هنا للسيرفس عشان تعمل عملية الدمج (Merge)
-//     );
-
-//     res.cookie("accessToken", accessToken, cookieOpts(req));
-//     res.cookie("refreshToken", refreshToken, cookieOpts(req));
-
-//     return res.json({
-//       success: true,
-//       user,
-//     });
-//   } catch (err) {
-//     return res.status(err.status || 400).json({
-//       success: false,
-//       message: err.message || "Error",
-//     });
-//   }
-// };
 exports.login = async (req, res) => {
   try {
     const sessionId = req.sessionId;
+    console.log("session", sessionId);
 
     const { user, accessToken, refreshToken } = await authService.loginUser(
       req.body,
@@ -266,31 +243,9 @@ exports.login = async (req, res) => {
     res.cookie("accessToken", accessToken, cookieOpts(req));
     res.cookie("refreshToken", refreshToken, cookieOpts(req));
 
-    // ── هنا نضيف جلب السلة ──
-    let cart = { items: [] }; // default فاضي
-
-    const userCart = await Cart.findOne({ user: user._id, isActive: true })
-      .populate([
-        { path: "items.product", select: "title slug price thumbnail" },
-        { path: "items.variant", select: "color images" },
-      ])
-      .lean();
-
-    if (userCart) {
-      // نفس الـ transform بتاع getCart
-      userCart.items = userCart.items.map((item) => {
-        if (item.variant && item.variant.images) {
-          item.variant.images = item.variant.images.slice(0, 1);
-        }
-        return item;
-      });
-      cart = userCart;
-    }
-
     return res.json({
       success: true,
       user,
-      cart, // ← أضفناه هنا
     });
   } catch (err) {
     return res.status(err.status || 400).json({
@@ -299,6 +254,52 @@ exports.login = async (req, res) => {
     });
   }
 };
+
+// exports.login = async (req, res) => {
+//   try {
+//     const sessionId = req.sessionId;
+
+//     const { user, accessToken, refreshToken } = await authService.loginUser(
+//       req.body,
+//       sessionId
+//     );
+
+//     res.cookie("accessToken", accessToken, cookieOpts(req));
+//     res.cookie("refreshToken", refreshToken, cookieOpts(req));
+
+//     // ── هنا نضيف جلب السلة ──
+//     let cart = { items: [] }; // default فاضي
+
+//     const userCart = await Cart.findOne({ user: user._id, isActive: true })
+//       .populate([
+//         { path: "items.product", select: "title slug price thumbnail" },
+//         { path: "items.variant", select: "color images" },
+//       ])
+//       .lean();
+
+//     if (userCart) {
+//       // نفس الـ transform بتاع getCart
+//       userCart.items = userCart.items.map((item) => {
+//         if (item.variant && item.variant.images) {
+//           item.variant.images = item.variant.images.slice(0, 1);
+//         }
+//         return item;
+//       });
+//       cart = userCart;
+//     }
+
+//     return res.json({
+//       success: true,
+//       user,
+//       cart, // ← أضفناه هنا
+//     });
+//   } catch (err) {
+//     return res.status(err.status || 400).json({
+//       success: false,
+//       message: err.message || "Error",
+//     });
+//   }
+// };
 
 // =====================================
 // REFRESH TOKENS
@@ -355,7 +356,6 @@ exports.checkAuth = async (req, res) => {
   try {
     const accessToken = req.cookies.accessToken;
     const refreshToken = req.cookies.refreshToken;
-    console.log(accessToken);
 
     // 1) Try Access Token
     if (accessToken) {

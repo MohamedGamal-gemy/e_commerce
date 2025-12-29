@@ -4,21 +4,24 @@ const router = express.Router();
 const {
   getCart,
   addItem,
-  updateItemQuantity,
+  updateQuantity,
   removeItem,
   clearCart,
+  getCartCount,
 } = require("../controllers/cartController");
 
-const ensureSessionId = require("../middleware/ensureSessionId");
-const { optionalProtect } = require("../middleware/optionalProtect");
+const { protectOption } = require("../middlewares/protectOption");
+const { guestSession } = require("../middleware/guestSession");
+// const { getCartCount } = require("../services/cart.service");
 
-// Ensure guests have a sessionId; controller will branch user vs guest
-router.use(ensureSessionId);
+router.use(protectOption);
+router.use(guestSession);
 
-// router.get("/", getCart);
-router.get("/", optionalProtect, getCart);
+router.get("/", getCart);
+router.get("/count", getCartCount);
+
 router.post("/items", addItem);
-router.patch("/items", updateItemQuantity);
+router.patch("/items", updateQuantity);
 router.delete("/items", removeItem);
 router.delete("/", clearCart);
 

@@ -1,7 +1,6 @@
 const formatCart = (cartDoc) => {
-console.log("cartDoc",cartDoc);
 
-    if (!cartDoc)
+  if (!cartDoc)
     return {
       items: [],
       subtotal: 0,
@@ -31,10 +30,7 @@ console.log("cartDoc",cartDoc);
     price: item.price,
   }));
 
-  const totalItems = items.reduce(
-    (sum, item) => sum + item.quantity,
-    0
-  );
+  const totalItems = items.reduce((sum, item) => sum + item.quantity, 0);
 
   const subtotal = items.reduce(
     (sum, item) => sum + item.price * item.quantity,

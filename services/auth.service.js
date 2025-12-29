@@ -1,7 +1,9 @@
+const { mergeGuestCartToUser } = require("../controllers/cartController");
 const Cart = require("../models/Cart");
 const GuestCart = require("../models/GuestCart");
 const User = require("../models/user");
 const crypto = require("crypto");
+const CartService = require("./cart.service");
 
 function publicUser(user) {
   return {
@@ -155,63 +157,14 @@ async function loginUser({ email, password }, sessionId) {
   const user = await User.findOne({ email }).select(
     "+password +refreshTokenHash"
   );
-
   if (!user) throw { status: 400, message: "Invalid credentials" };
 
   const ok = await user.comparePassword(password);
   if (!ok) throw { status: 400, message: "Invalid credentials" };
 
-  // --- بداية منطق دمج الكارت (Cart Merge Logic المحسن) ---
-  let session; // للـ transaction لو هتستخدم
-  if (sessionId) {
-    // جلب الكارتين معًا
-    const [guestCart] = await Promise.all([
-      GuestCart.findOne({ sessionId, isActive: true }).lean(), // lean عشان أسرع هنا
-      // مش محتاجين userCart دلوقتي، هنستخدم الـ static method
-    ]);
+  await CartService.mergeGuestCartToUser(user._id, sessionId);
 
-    if (guestCart && guestCart.items.length > 0) {
-      // optional: ابدأ transaction لو عايز atomicity
-      // session = await mongoose.startSession();
-      // session.startTransaction();
 
-      try {
-        // كل item من guest بنضيفه لكارت اليوزر باستخدام الـ static method الموحد
-        for (const gItem of guestCart.items) {
-          // نحول الـ item لـ plain object عشان نضمن compatibility
-          const itemPayload = {
-            product: gItem.product,
-            variant: gItem.variant,
-            size: gItem.size,
-            color: gItem.color,
-            quantity: gItem.quantity,
-            price: gItem.price,
-          };
-
-          // ده هيعمل create لو مفيش كارت، أو update لو فيه
-          await Cart.addItemToCart(
-            { user: user._id },
-            itemPayload
-            // { session } // لو بتستخدم transaction
-          );
-        }
-
-        // مسح كارت الجيست بعد الدمج الناجح
-        await GuestCart.deleteOne({ _id: guestCart._id });
-
-        // await session.commitTransaction();
-      } catch (mergeError) {
-        // await session.abortTransaction();
-        console.error("Cart merge failed:", mergeError);
-        // مش هنفشل الـ login كله بسبب الـ cart، بس ممكن log
-      } finally {
-        // session?.endSession();
-      }
-    }
-  }
-  // --- نهاية منطق الدمج ---
-
-  // توليد التوكنات
   const accessToken = user.generateAccessToken();
   const rawRefresh = user.createRefreshToken();
 
@@ -219,15 +172,10 @@ async function loginUser({ email, password }, sessionId) {
     .createHash("sha256")
     .update(rawRefresh)
     .digest("hex");
-
   user.lastLogin = new Date();
   await user.save();
 
-  return {
-    user: publicUser(user),
-    accessToken,
-    refreshToken: rawRefresh,
-  };
+  return { user: publicUser(user), accessToken, refreshToken: rawRefresh };
 }
 async function refreshTokens(refreshToken) {
   if (!refreshToken) throw { status: 401, message: "No refresh token" };

@@ -1,5 +1,4 @@
 module.exports = (schema) => {
-  // ✅ إضافة منتج إلى الكارت أو تحديث الكمية لو موجود
   schema.statics.addItem = async function (userId, newItem) {
     let cart = await this.findOne({ user: userId, isActive: true });
 
@@ -25,7 +24,6 @@ module.exports = (schema) => {
     return cart;
   };
 
-  // ✅ حذف عنصر من الكارت
   schema.statics.removeItem = async function (userId, variantId, size, color) {
     const cart = await this.findOne({ user: userId, isActive: true });
     if (!cart) return null;
@@ -43,7 +41,6 @@ module.exports = (schema) => {
     return cart;
   };
 
-  // ✅ إفراغ الكارت
   schema.statics.clearCart = async function (userId) {
     return await this.findOneAndUpdate(
       { user: userId, isActive: true },

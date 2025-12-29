@@ -5,7 +5,7 @@ const crypto = require("crypto");
 const orderItemSchema = new mongoose.Schema(
   {
     product: {
-      type: mongoose.Schema.Types.ObjectId,
+      type: mongoose.Schema.Types.ObjectId, 
       ref: "Product",
       required: true,
     },
